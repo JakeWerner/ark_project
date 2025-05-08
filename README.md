@@ -139,9 +139,9 @@ if __name__ == '__main__':
 ## Privileges
 
 Note that certain Nmap scan functionalities invoked by ARK require elevated privileges to run correctly:
-OS Detection (include_os_detection=True): Nmap's -O flag needs to send raw packets and requires root (on Linux/macOS) or Administrator (on Windows) privileges. If you enable this feature, ensure you run your Python script with the necessary elevation (e.g., using sudo python your_script.py on Linux/macOS or running from an Administrator terminal on Windows).
-Other scan types you might add later (like SYN scans -sS) also require these privileges.
-ARK will log warnings when features requiring elevation are requested, but execution might fail if sufficient privileges are not available.
+* OS Detection (include_os_detection=True): Nmap's -O flag needs to send raw packets and requires root (on Linux/macOS) or Administrator (on Windows) privileges. If you enable this feature, ensure you run your Python script with the necessary elevation (e.g., using sudo python your_script.py on Linux/macOS or running from an Administrator terminal on Windows).
+* Other scan types that might be added later later (like SYN scans -sS) also require these privileges.
+* ARK will log warnings when features requiring elevation are requested, but execution might fail if sufficient privileges are not available.
 
 
 ## Running Tests
