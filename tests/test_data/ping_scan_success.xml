@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<?xml-stylesheet href="file:///usr/bin/../share/nmap/nmap.xsl" type="text/xsl"?>
+<nmaprun scanner="nmap" args="nmap -sn -T4 -oX - 192.168.1.1 192.168.1.2" start="1746740400" startstr="Thu May  8 15:20:00 2025" version="7.80" xmloutputversion="1.04">
+<verbose level="0"/>
+<debugging level="0"/>
+<host starttime="1746740400" endtime="1746740401"><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="192.168.1.1" addrtype="ipv4"/>
+<address addr="00:11:22:33:44:55" addrtype="mac" vendor="TestVendor"/>
+<hostnames><hostname name="host1.example.com" type="PTR"/></hostnames>
+</host>
+<host starttime="1746740401" endtime="1746740402"><status state="down" reason="no-response" reason_ttl="0"/>
+<address addr="192.168.1.2" addrtype="ipv4"/>
+</host>
+<host starttime="1746740402" endtime="1746740403"><status state="up" reason="echo-reply" reason_ttl="64"/>
+<address addr="192.168.1.3" addrtype="ipv4"/>
+<hostnames/>
+</host>
+<runstats><finished time="1746740403" timestr="Thu May  8 15:20:03 2025" elapsed="3" summary="Nmap done at Thu May  8 15:20:03 2025; 3 IP addresses (2 hosts up) scanned in 3.00 seconds" exit="success"/><hosts up="2" down="1" total="3"/>
+</runstats>
+</nmaprun>
