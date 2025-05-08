@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<nmaprun scanner="nmap" args="nmap -sV -T4 -sC -oX - 192.168.1.105" start="1746746000" startstr="Thu May  8 17:13:20 2025" version="7.80" xmloutputversion="1.04">
+<verbose level="0"/>
+<debugging level="0"/>
+<host starttime="1746746000" endtime="1746746005">
+    <status state="up" reason="syn-ack" reason_ttl="64"/>
+    <address addr="192.168.1.105" addrtype="ipv4"/>
+    <hostnames/>
+    <ports>
+        <port protocol="tcp" portid="80">
+            <state state="open" reason="syn-ack" reason_ttl="64"/>
+            <service name="http" product="nginx" version="1.18.0" method="probed" conf="10"/>
+            <script id="http-title" output="Test Web Server Landing Page"/>
+            <script id="http-server-header" output="nginx/1.18.0"/>
+        </port>
+        <port protocol="tcp" portid="135">
+            <state state="filtered" reason="no-response" reason_ttl="0"/>
+        </port>
+    </ports>
+    <hostscript>
+        <script id="smb-os-discovery" output="OS: Windows 10 (Build 19041) (Windows 10 Professional 6.3)&#xa;Computer name: TESTPC&#xa;NetBIOS computer name: TESTPC&#xa;Workgroup: WORKGROUP&#xa;System time: 2025-05-08T17:13:25+00:00"/>
+        <script id="host-example" output="Some other host level output"/>
+    </hostscript>
+    </host>
+<runstats><finished time="1746746005" timestr="Thu May  8 17:13:25 2025" elapsed="5" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

@@ -410,3 +410,100 @@ def test_run_udp_scan_nmap_fails(mock_subprocess_run: MagicMock):
     # Expecting default empty list on failure
     assert isinstance(result_ports, list)
     assert len(result_ports) == 0
+
+@patch('autork.nmap_handler.subprocess.run')
+def test_run_port_scan_with_scripts_success(mock_subprocess_run: MagicMock):
+    """Test successful parsing of NSE script output (port and host)."""
+    # Arrange
+    handler = NmapHandler()
+    target_ip = "192.168.1.105"
+    top_ports = 2 # As per sample XML focus
+    include_os = False # Sample XML doesn't include OS info
+    run_scripts = True # Enable scripts
+    sample_xml = load_xml_from_file("scan_with_scripts_success.xml")
+
+    mock_response = MagicMock()
+    mock_response.stdout = sample_xml
+    mock_response.stderr = ""
+    mock_response.returncode = 0
+    mock_subprocess_run.return_value = mock_response
+
+    # Act
+    scan_results = handler.run_port_scan_with_services(
+        target_ip,
+        top_ports=top_ports, # This might not matter if XML has specific ports
+        include_os_detection=include_os,
+        run_default_scripts=run_scripts
+    )
+
+    # Assert Command
+    expected_nmap_command = [
+        handler.nmap_path, '-sV', '-T4',
+        '--top-ports', str(top_ports),
+        '-sC', # Ensure -sC flag is present
+        '-oX', '-', target_ip
+    ]
+    mock_subprocess_run.assert_called_once_with(
+        expected_nmap_command, capture_output=True, text=True, check=True, timeout=900
+    )
+
+    # Assert Host Scripts
+    assert "host_scripts" in scan_results
+    assert len(scan_results["host_scripts"]) == 2
+    assert scan_results["host_scripts"].get("smb-os-discovery") is not None
+    assert "Windows 10" in scan_results["host_scripts"]["smb-os-discovery"]
+    assert scan_results["host_scripts"].get("host-example") == "Some other host level output"
+
+    # Assert Port Scripts
+    assert "ports" in scan_results
+    port80 = next((p for p in scan_results["ports"] if p.number == 80), None)
+    assert port80 is not None
+    assert port80.scripts is not None
+    assert len(port80.scripts) == 2
+    assert port80.scripts.get("http-title") == "Test Web Server Landing Page"
+    assert port80.scripts.get("http-server-header") == "nginx/1.18.0"
+
+    port135 = next((p for p in scan_results["ports"] if p.number == 135), None)
+    assert port135 is not None
+    assert port135.scripts is None # No scripts run on filtered/closed ports usually
+
+@patch('autork.nmap_handler.subprocess.run')
+def test_run_port_scan_scripts_disabled(mock_subprocess_run: MagicMock):
+    """Verify -sC is not added and script results are not parsed if disabled."""
+    # Arrange
+    handler = NmapHandler()
+    target_ip = "192.168.1.105"
+    top_ports = 2
+    include_os = False
+    run_scripts = False # Explicitly disable scripts
+
+    # Use the same XML that *contains* script output
+    sample_xml = load_xml_from_file("scan_with_scripts_success.xml")
+
+    mock_response = MagicMock()
+    mock_response.stdout = sample_xml
+    mock_response.stderr = ""
+    mock_response.returncode = 0
+    mock_subprocess_run.return_value = mock_response
+
+    # Act
+    scan_results = handler.run_port_scan_with_services(
+        target_ip,
+        top_ports=top_ports,
+        include_os_detection=include_os,
+        run_default_scripts=run_scripts # Passed as False
+    )
+
+    # Assert Command
+    actual_command_args = mock_subprocess_run.call_args[0][0]
+    assert '-sC' not in actual_command_args # Ensure script flag is absent
+
+    # Assert Host Scripts (should be empty default)
+    assert "host_scripts" in scan_results
+    assert len(scan_results["host_scripts"]) == 0
+
+    # Assert Port Scripts (should be None in the Port objects)
+    assert "ports" in scan_results
+    port80 = next((p for p in scan_results["ports"] if p.number == 80), None)
+    assert port80 is not None
+    assert port80.scripts is None # Should not have been parsed
