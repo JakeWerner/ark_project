@@ -162,51 +162,131 @@ def test_scan_host_deep_nmap_handler_returns_empty(mocker):
 # Testing this requires mocking both run_ping_scan and run_port_scan_with_services
 # It might involve mocker.patch.object multiple times or setting side_effects
 # This test is more complex, let's start with the above ones.
-def test_perform_basic_recon_workflow(mocker):
+def test_perform_basic_recon_workflow_with_udp(mocker): # Renamed slightly
     # Arrange
     engine = ARKEngine()
     target_scope = "192.168.1.0/24"
-    top_ports = 50
+    top_tcp_ports = 50
+    top_udp_ports = 25 # Define UDP ports for the test
     include_os = True
+    include_udp = True # <<< Enable UDP for this test variation
 
-    # 1. Mock discover_live_hosts's underlying call (run_ping_scan)
+    # 1. Mock run_ping_scan
     mock_host1 = Host(ip="192.168.1.1", status="up", hostname="host1.local")
     mock_host2 = Host(ip="192.168.1.5", status="up", hostname=None)
     mock_ping_scan_return = [mock_host1, mock_host2]
-    mock_run_ping_scan = mocker.patch.object(engine.nmap_handler, 'run_ping_scan', return_value=mock_ping_scan_return)
+    mock_run_ping_scan = mocker.patch.object(
+        engine.nmap_handler, 'run_ping_scan', return_value=mock_ping_scan_return
+    )
 
-    # 2. Mock scan_host_deep's underlying call (run_port_scan_with_services)
-    # We need it to return different results based on the IP maybe, or just generic results
-    mock_scan_result_host1 = { "ports": [Port(number=80)], "os_matches": [OSMatch(name="Linux")], "mac_address": "AA..." }
-    mock_scan_result_host2 = { "ports": [Port(number=443)], "os_matches": [OSMatch(name="Windows")], "mac_address": "BB..." }
-    
-    # Use side_effect to return different values for consecutive calls
-    mock_run_port_scan = mocker.patch.object(
-        engine.nmap_handler, 
-        'run_port_scan_with_services', 
-        side_effect=[mock_scan_result_host1, mock_scan_result_host2] # Return these in order
+    # 2. Mock run_port_scan_with_services (for TCP/OS deep scan)
+    mock_tcp_scan_result_host1 = { "ports": [Port(number=80, protocol='tcp')], "os_matches": [OSMatch(name="Linux")], "mac_address": "AA..." }
+    mock_tcp_scan_result_host2 = { "ports": [Port(number=445, protocol='tcp')], "os_matches": [OSMatch(name="Windows")], "mac_address": "BB..." }
+    mock_run_tcp_port_scan = mocker.patch.object(
+        engine.nmap_handler,
+        'run_port_scan_with_services',
+        side_effect=[mock_tcp_scan_result_host1, mock_tcp_scan_result_host2]
+    )
+
+    # 3. Mock run_udp_scan
+    mock_udp_scan_result_host1 = [Port(number=53, protocol='udp', status='open')]
+    mock_udp_scan_result_host2 = [Port(number=161, protocol='udp', status='open|filtered')]
+    mock_run_udp_scan = mocker.patch.object(
+        engine.nmap_handler,
+        'run_udp_scan',
+        side_effect=[mock_udp_scan_result_host1, mock_udp_scan_result_host2]
     )
 
     # Act
-    final_results = engine.perform_basic_recon(target_scope, top_ports=top_ports, include_os_detection=include_os)
+    final_results = engine.perform_basic_recon(
+        target_scope,
+        top_ports=top_tcp_ports,
+        include_os_detection=include_os,
+        include_udp_scan=include_udp, # Pass True
+        top_udp_ports=top_udp_ports
+    )
 
     # Assert
-    # Check run_ping_scan was called
+    # Check primary calls
     mock_run_ping_scan.assert_called_once_with(target_scope)
+    assert mock_run_tcp_port_scan.call_count == 2 # Called for each host
+    assert mock_run_udp_scan.call_count == 2 # <<< Should also be called for each host
 
-    # Check run_port_scan_with_services was called twice (once for each live host)
-    assert mock_run_port_scan.call_count == 2
-    mock_run_port_scan.assert_any_call("192.168.1.1", top_ports=top_ports, include_os_detection=include_os)
-    mock_run_port_scan.assert_any_call("192.168.1.5", top_ports=top_ports, include_os_detection=include_os)
-    
-    # Check the final results list
+    # Check TCP/OS calls specifically
+    mock_run_tcp_port_scan.assert_any_call("192.168.1.1", top_ports=top_tcp_ports, include_os_detection=include_os)
+    mock_run_tcp_port_scan.assert_any_call("192.168.1.5", top_ports=top_tcp_ports, include_os_detection=include_os)
+
+    # Check UDP calls specifically
+    mock_run_udp_scan.assert_any_call("192.168.1.1", top_ports=top_udp_ports, include_version=True) # Assuming default include_version=True
+    mock_run_udp_scan.assert_any_call("192.168.1.5", top_ports=top_udp_ports, include_version=True)
+
+    # Check merged results in the final Host objects
     assert len(final_results) == 2
-    assert final_results[0].ip == "192.168.1.1"
-    assert final_results[0].ports[0].number == 80
-    assert final_results[0].os_matches[0].name == "Linux"
-    assert final_results[0].mac_address == "AA..." 
+    host1_result = next(h for h in final_results if h.ip == "192.168.1.1")
+    host2_result = next(h for h in final_results if h.ip == "192.168.1.5")
+
+    # Check Host 1
+    assert any(p.number == 80 and p.protocol == 'tcp' for p in host1_result.ports)
+    assert any(p.number == 53 and p.protocol == 'udp' for p in host1_result.ports)
+    assert len(host1_result.ports) == 2 # 1 TCP + 1 UDP from mocks
+    assert host1_result.os_matches[0].name == "Linux"
+    assert host1_result.mac_address == "AA..."
+
+    # Check Host 2
+    assert any(p.number == 445 and p.protocol == 'tcp' for p in host2_result.ports)
+    assert any(p.number == 161 and p.protocol == 'udp' for p in host2_result.ports)
+    assert len(host2_result.ports) == 2 # 1 TCP + 1 UDP from mocks
+    assert host2_result.os_matches[0].name == "Windows"
+    assert host2_result.mac_address == "BB..."
+
+
+def test_scan_host_udp_success(mocker):
+    """Test scan_host_udp correctly calls handler and updates host."""
+    # Arrange
+    engine = ARKEngine()
+    # Start with a host that might have TCP results already
+    input_host = Host(
+        ip="192.168.1.200", status="up",
+        ports=[Port(number=80, protocol='tcp', status='open', service=Service(name='http'))]
+    )
+    top_ports_udp = 50
+    include_ver_udp = True
+
+    # Mock return value from NmapHandler.run_udp_scan
+    mock_udp_ports = [
+        Port(number=53, protocol='udp', status='open', service=Service(name='domain')),
+        Port(number=161, protocol='udp', status='open|filtered')
+    ]
+    mock_handler_udp_scan = mocker.patch.object(
+        engine.nmap_handler, 
+        'run_udp_scan', 
+        return_value=mock_udp_ports
+    )
+
+    # Act
+    # The method modifies the host object in place
+    engine.scan_host_udp(input_host, top_ports=top_ports_udp, include_version=include_ver_udp)
+
+    # Assert
+    # Check handler method was called correctly
+    mock_handler_udp_scan.assert_called_once_with(
+        input_host.ip, 
+        top_ports=top_ports_udp, 
+        include_version=include_ver_udp
+    )
+
+    # Check that the host object's ports list was updated correctly
+    assert len(input_host.ports) == 3 # Original TCP port + 2 new UDP ports
     
-    assert final_results[1].ip == "192.168.1.5"
-    assert final_results[1].ports[0].number == 443
-    assert final_results[1].os_matches[0].name == "Windows"
-    assert final_results[1].mac_address == "BB..."
+    tcp_port_exists = any(p.number == 80 and p.protocol == 'tcp' for p in input_host.ports)
+    udp_port53_exists = any(p.number == 53 and p.protocol == 'udp' for p in input_host.ports)
+    udp_port161_exists = any(p.number == 161 and p.protocol == 'udp' for p in input_host.ports)
+    
+    assert tcp_port_exists
+    assert udp_port53_exists
+    assert udp_port161_exists
+
+    # Verify the details of an added UDP port
+    udp53 = next(p for p in input_host.ports if p.number == 53 and p.protocol == 'udp')
+    assert udp53.status == 'open'
+    assert udp53.service.name == 'domain'

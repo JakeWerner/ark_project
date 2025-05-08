@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 from typing import Optional, List, Dict, Any
 import os
 import shutil
-import logging # Import logging
+import logging
 
 from .datamodels import Host, Port, Service, OSMatch
 
@@ -60,7 +60,11 @@ class NmapHandler:
         """
         try:
             logger.debug(f"Executing Nmap command: {' '.join(command)}")
-            result = subprocess.run(command, capture_output=True, text=True, check=True, timeout=600)
+            # Using check=True will raise CalledProcessError if nmap returns non-zero
+            # capture_output=True to get stdout/stderr
+            # text=True to decode stdout/stderr as strings
+            # Increased timeout to handle potentially long scans
+            result = subprocess.run(command, capture_output=True, text=True, check=True, timeout=900) # 15 min timeout
             if result.stdout:
                 try:
                     return ET.ElementTree(ET.fromstring(result.stdout))
@@ -80,7 +84,7 @@ class NmapHandler:
             if e.stdout: logger.debug(f"Nmap stdout (on error):\n{e.stdout[:500]}")
             return None
         except subprocess.TimeoutExpired:
-            logger.error(f"Nmap command timed out: {' '.join(command)}")
+            logger.error(f"Nmap command timed out after specified duration: {' '.join(command)}")
             return None
 
     def run_ping_scan(self, target_scope: str) -> List[Host]:
@@ -95,22 +99,22 @@ class NmapHandler:
 
         if xml_root_element_tree:
             root = xml_root_element_tree.getroot()
-            logger.debug(f"Parsing ping scan XML. Root tag: {root.tag}") # Debug root
+            logger.debug(f"Parsing ping scan XML. Root tag: {root.tag}")
             for host_node in root.findall('host'):
-                # --- Added Debug block ---
+                # --- Debug block ---
                 ip_for_debug = host_node.findtext('address[@addrtype="ipv4"]')
-                status_element = host_node.find('status') # Find element first
+                status_element = host_node.find('status')
                 state_attr_for_debug = status_element.get('state') if status_element is not None else 'StatusElementNotFound'
                 logger.debug(f"Processing host node: IP={ip_for_debug}, StatusAttr='{state_attr_for_debug}'")
                 # --- End Debug block ---
 
-                status_node = host_node.find('status') # Re-find for logic
+                status_node = host_node.find('status')
                 address_node = host_node.find('address[@addrtype="ipv4"]')
 
                 if status_node is not None and address_node is not None:
                     state = status_node.get('state')
                     ip_address = address_node.get('addr')
-                    logger.debug(f"  Parsed state='{state}', ip='{ip_address}'") # Debug parsed values
+                    logger.debug(f"  Parsed state='{state}', ip='{ip_address}'")
 
                     if state == 'up' and ip_address:
                         current_hostname: Optional[str] = None
@@ -119,12 +123,11 @@ class NmapHandler:
                             hostname_element = hostnames_node.find('hostname')
                             if hostname_element is not None:
                                 current_hostname = hostname_element.get('name')
-                        # See if this critical debug message prints during the failing test
                         logger.debug(f"  >>> Found UP host! Appending Host(ip={ip_address}, hostname={current_hostname})")
                         discovered_hosts.append(
                             Host(ip=ip_address, status='up', hostname=current_hostname)
                         )
-        # ... (logging for no hosts up) ...
+
         if not discovered_hosts and xml_root_element_tree is not None:
              root = xml_root_element_tree.getroot()
              runstats_node = root.find('runstats/hosts')
@@ -138,16 +141,18 @@ class NmapHandler:
 
     def run_port_scan_with_services(self, host_ip: str, top_ports: int = 100, include_os_detection: bool = False) -> Dict[str, Any]:
         """
-        Performs a port scan and optionally OS detection on the specified host.
-        Returns a dictionary containing 'ports' (List[Port]) and 'os_matches' (List[OSMatch]),
-        plus other host details like MAC, uptime, etc.
+        Performs a TCP port scan and optionally OS detection on the specified host.
+        Returns a dictionary containing 'ports' (List[Port]), 'os_matches' (List[OSMatch]),
+        and other host details like MAC, uptime, etc.
         """
-        logger.debug(f"Initiating port/service scan for host: {host_ip} (top_ports={top_ports}, os_detect={include_os_detection})")
+        logger.debug(f"Initiating TCP port/service scan for host: {host_ip} (top_ports={top_ports}, os_detect={include_os_detection})")
+        # Nmap's default TCP scan is SYN (-sS) if root, Connect (-sT) otherwise.
+        # -sV enables service detection. -T4 speeds things up.
         command = [self.nmap_path, '-sV', '-T4']
         if top_ports is not None and top_ports > 0:
             command.extend(['--top-ports', str(top_ports)])
-        elif top_ports == 0:
-             command.extend(['-p', '1-65535'])
+        elif top_ports == 0: # Scan all 1-65535 ports
+            command.extend(['-p', '1-65535']) # Note: can be slow
 
         if include_os_detection:
             command.append('-O')
@@ -166,25 +171,22 @@ class NmapHandler:
             root = xml_root_element_tree.getroot()
             host_node = root.find('host')
 
-            # Ensure host_node exists before proceeding with parsing for that host
             if host_node is None:
-                hosthint_node = root.find('hosthint')
-                if hosthint_node:
+                # ... (error handling as before) ...
+                 hosthint_node = root.find('hosthint')
+                 if hosthint_node:
                      status_node = hosthint_node.find('status')
                      if status_node is not None and status_node.get('state') == 'down':
                          logger.info(f"Host {host_ip} reported as down by Nmap during port scan.")
                          return scan_results
-
-                verbose_node = root.find('verbose')
-                if verbose_node is not None and "Failed to resolve" in verbose_node.get('level', ''):
-                     logger.warning(f"Failed to resolve hostname {host_ip}")
-                     return scan_results
-
-                logger.warning(f"No 'host' node found in Nmap XML output for {host_ip}. Scan might have failed or host is down.")
-                return scan_results
+                 verbose_node = root.find('verbose')
+                 if verbose_node is not None and "Failed to resolve" in verbose_node.get('level', ''):
+                      logger.warning(f"Failed to resolve hostname {host_ip}")
+                      return scan_results
+                 logger.warning(f"No 'host' node found in Nmap XML output for {host_ip}. Scan might have failed or host is down.")
+                 return scan_results
 
             # --- Parsing logic now guaranteed to have a valid host_node ---
-
             # Parse Ports
             ports_parent_node = host_node.find('ports')
             if ports_parent_node is not None:
@@ -192,6 +194,7 @@ class NmapHandler:
                     try:
                         port_num = int(port_element.get('portid'))
                         protocol = port_element.get('protocol')
+                        if protocol != 'tcp': continue # Ensure we only parse TCP here
                         state_node = port_element.find('state')
                         if state_node is None: continue
                         status = state_node.get('state')
@@ -212,7 +215,7 @@ class NmapHandler:
                             service=port_service_obj, reason=reason
                         ))
                     except Exception as e:
-                        logger.error(f"Error parsing a port element for {host_ip}: {e}", exc_info=True)
+                        logger.error(f"Error parsing a TCP port element for {host_ip}: {e}", exc_info=True)
                         continue
 
             # Parse OS Detection Results
@@ -240,18 +243,96 @@ class NmapHandler:
             if distance_node is not None:
                 scan_results['distance'] = int(distance_node.get('value', "0"))
 
-        # End of 'if xml_root_element_tree:' block
-        logger.debug(f"Port/service scan for {host_ip} finished. Returning results.")
+        logger.debug(f"TCP port/service scan for {host_ip} finished. Returning results.")
         return scan_results
 
+    # --- NEW METHOD for UDP ---
+    def run_udp_scan(self, host_ip: str, top_ports: int = 100, include_version: bool = True) -> List[Port]:
+        """
+        Performs a UDP scan on the specified host.
+        Requires root/administrator privileges. Can be slow.
+
+        :param host_ip: The IP address or resolvable hostname of the target.
+        :type host_ip: str
+        :param top_ports: Scan the top N most common UDP ports. Use 0 for default UDP ports,
+                          or None for Nmap's default top 1000 UDP. Defaults to 100.
+                          Scanning all 65k UDP ports is usually impractical.
+        :type top_ports: int
+        :param include_version: If True, adds `-sV` for service/version detection on UDP ports.
+        :type include_version: bool
+        :return: A list of Port objects found during the UDP scan.
+        :rtype: List[Port]
+        """
+        logger.info(f"Initiating UDP scan for host: {host_ip} (top_ports={top_ports}, version_detect={include_version})")
+        logger.warning("UDP scanning requires root/administrator privileges and can be very slow.")
+
+        command = [self.nmap_path, '-sU', '-T4'] # -sU for UDP scan
+        if include_version:
+            command.append('-sV') # Service detection can work with UDP too
+
+        if top_ports is not None and top_ports > 0:
+            command.extend(['--top-ports', str(top_ports)])
+        # Add other options like -p for specific ports if needed later
+
+        command.extend(['-oX', '-', host_ip])
+
+        xml_root_element_tree = self._run_command(command)
+        parsed_ports: List[Port] = []
+
+        if xml_root_element_tree:
+            root = xml_root_element_tree.getroot()
+            host_node = root.find('host')
+
+            if host_node is None:
+                logger.warning(f"No 'host' node found in Nmap UDP scan XML output for {host_ip}.")
+                return parsed_ports # Return empty list
+
+            ports_parent_node = host_node.find('ports')
+            if ports_parent_node is not None:
+                for port_element in ports_parent_node.findall('port'):
+                    try:
+                        port_num = int(port_element.get('portid'))
+                        protocol = port_element.get('protocol')
+                        if protocol != 'udp': continue # Focus on UDP results
+
+                        state_node = port_element.find('state')
+                        if state_node is None: continue
+
+                        status = state_node.get('state') # Common: open|filtered, open, closed
+                        reason = state_node.get('reason', '')
+
+                        port_service_obj: Optional[Service] = None
+                        # Only parse service if state contains 'open' and version detection ran
+                        if include_version and ('open' in status):
+                            service_node = port_element.find('service')
+                            if service_node is not None:
+                                port_service_obj = Service(
+                                    name=service_node.get('name', ""), product=service_node.get('product', ""),
+                                    version=service_node.get('version', ""), extrainfo=service_node.get('extrainfo', ""),
+                                    method=service_node.get('method', ""), conf=int(service_node.get('conf', "0"))
+                                    # ostype might not be reliably detected via UDP service probe
+                                )
+
+                        parsed_ports.append(Port(
+                            number=port_num, protocol=protocol, status=status,
+                            service=port_service_obj, reason=reason
+                        ))
+                    except Exception as e:
+                        logger.error(f"Error parsing a UDP port element for {host_ip}: {e}", exc_info=True)
+                        continue
+        logger.debug(f"UDP scan for {host_ip} finished. Parsed {len(parsed_ports)} ports.")
+        return parsed_ports
+
+
 # --- For direct testing of this file ---
-# The __main__ block remains the same as the previous version, it can be used
-# for manual testing if needed, but pytest is preferred.
+# The __main__ block can remain for manual checks, but pytest is preferred for testing.
 if __name__ == '__main__':
     # Basic logging setup for direct script testing
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    print("--- Testing NmapHandler (with OS Detection if privileges allow) ---")
-    # ... (rest of the __main__ block as provided before) ...
-    handler = NmapHandler()
-    # ... etc ...
+    print("--- Manual Testing NmapHandler ---")
+    handler = NmapHandler() # Assumes nmap in PATH or ARK_NMAP_PATH is set
+    test_target = "scanme.nmap.org"
+    # Example: Run UDP scan directly (requires privileges and will be slow)
+    # print(f"Testing UDP scan on {test_target}")
+    # udp_results = handler.run_udp_scan(test_target, top_ports=20)
+    # print("UDP Results:", udp_results)

@@ -44,7 +44,7 @@ def test_run_ping_scan_hosts_up(mock_subprocess_run: MagicMock):
 
     expected_nmap_command = [handler.nmap_path, '-sn', '-T4', '-oX', '-', target_scope]
     mock_subprocess_run.assert_called_once_with(
-        expected_nmap_command, capture_output=True, text=True, check=True, timeout=600
+        expected_nmap_command, capture_output=True, text=True, check=True, timeout=900
     )
     assert len(result_hosts) == 2
     host1 = next(h for h in result_hosts if h.ip == "192.168.1.1")
@@ -115,7 +115,7 @@ def test_run_port_scan_success(mock_subprocess_run: MagicMock):
         '-O', '-oX', '-', target_ip
     ]
     mock_subprocess_run.assert_called_once_with(
-        expected_nmap_command, capture_output=True, text=True, check=True, timeout=600
+        expected_nmap_command, capture_output=True, text=True, check=True, timeout=900
     )
 
     assert "ports" in scan_results and len(scan_results["ports"]) == 3
@@ -158,7 +158,7 @@ def test_run_port_scan_no_open_ports(mock_subprocess_run: MagicMock):
         '-oX', '-', target_ip # No -O
     ]
     mock_subprocess_run.assert_called_once_with(
-        expected_nmap_command, capture_output=True, text=True, check=True, timeout=600
+        expected_nmap_command, capture_output=True, text=True, check=True, timeout=900
     )
     assert "ports" in scan_results and len(scan_results["ports"]) == 0
     assert "os_matches" in scan_results and len(scan_results["os_matches"]) == 0
@@ -295,3 +295,118 @@ def test_run_port_scan_nmap_command_fails(mock_subprocess_run: MagicMock):
     assert scan_results.get("uptime_seconds") is None
     assert scan_results.get("last_boot") is None
     assert scan_results.get("distance") is None
+
+
+@patch('autork.nmap_handler.subprocess.run')
+def test_run_udp_scan_success(mock_subprocess_run: MagicMock):
+    """Test successful UDP scan parsing with various port states."""
+    # Arrange
+    handler = NmapHandler()
+    target_ip = "192.168.1.200"
+    top_ports = 3
+    include_ver = True
+    sample_xml = load_xml_from_file("udp_scan_success.xml") # Load the new sample
+
+    mock_response = MagicMock()
+    mock_response.stdout = sample_xml
+    mock_response.stderr = ""
+    mock_response.returncode = 0
+    mock_subprocess_run.return_value = mock_response
+
+    # Act
+    result_ports = handler.run_udp_scan(
+        target_ip, top_ports=top_ports, include_version=include_ver
+    )
+
+    # Assert
+    expected_nmap_command = [
+        handler.nmap_path, '-sU', '-T4', '-sV', # Include -sV
+        '--top-ports', str(top_ports),
+        '-oX', '-', target_ip
+    ]
+    mock_subprocess_run.assert_called_once_with(
+        expected_nmap_command, capture_output=True, text=True, check=True, timeout=900 # Using updated timeout
+    )
+
+    assert len(result_ports) == 3
+
+    port53 = next((p for p in result_ports if p.number == 53), None)
+    assert port53 is not None
+    assert port53.protocol == "udp"
+    assert port53.status == "open"
+    assert port53.service is not None
+    assert port53.service.name == "domain"
+    assert port53.service.product == "ISC BIND"
+
+    port123 = next((p for p in result_ports if p.number == 123), None)
+    assert port123 is not None
+    assert port123.protocol == "udp"
+    assert port123.status == "open|filtered" # Check the specific UDP state
+    assert port123.service is not None # Service name might be a table guess
+    assert port123.service.name == "ntp"
+
+    port161 = next((p for p in result_ports if p.number == 161), None)
+    assert port161 is not None
+    assert port161.protocol == "udp"
+    assert port161.status == "closed"
+    assert port161.service is None # No service info for closed ports
+
+
+@patch('autork.nmap_handler.subprocess.run')
+def test_run_udp_scan_version_disabled(mock_subprocess_run: MagicMock):
+    """Test UDP scan with version detection disabled."""
+    # Arrange
+    handler = NmapHandler()
+    target_ip = "192.168.1.200"
+    top_ports = 3
+    include_ver = False # Disable version detection
+    # Can reuse success XML, service parsing should just be skipped by handler
+    sample_xml = load_xml_from_file("udp_scan_success.xml") 
+
+    mock_response = MagicMock()
+    mock_response.stdout = sample_xml
+    mock_response.stderr = ""
+    mock_response.returncode = 0
+    mock_subprocess_run.return_value = mock_response
+
+    # Act
+    result_ports = handler.run_udp_scan(
+        target_ip, top_ports=top_ports, include_version=include_ver
+    )
+
+    # Assert
+    expected_nmap_command = [
+        handler.nmap_path, '-sU', '-T4', # No -sV
+        '--top-ports', str(top_ports),
+        '-oX', '-', target_ip
+    ]
+    mock_subprocess_run.assert_called_once_with(
+        expected_nmap_command, capture_output=True, text=True, check=True, timeout=900
+    )
+    
+    # Check that ports were found but service info is None
+    assert len(result_ports) == 3
+    port53 = next((p for p in result_ports if p.number == 53), None)
+    assert port53 is not None
+    assert port53.status == "open"
+    assert port53.service is None # Service should be None as -sV was off
+
+
+@patch('autork.nmap_handler.subprocess.run')
+def test_run_udp_scan_nmap_fails(mock_subprocess_run: MagicMock):
+    """Test UDP scan behavior when the Nmap command fails."""
+    # Arrange
+    handler = NmapHandler()
+    target_ip = "192.168.1.200"
+    mock_subprocess_run.side_effect = subprocess.CalledProcessError(
+        returncode=1, cmd=['nmap', '-sU', target_ip], stderr="UDP Scan Failed!"
+    )
+
+    # Act
+    result_ports = handler.run_udp_scan(target_ip, top_ports=20, include_version=True)
+
+    # Assert
+    mock_subprocess_run.assert_called_once()
+    # Expecting default empty list on failure
+    assert isinstance(result_ports, list)
+    assert len(result_ports) == 0

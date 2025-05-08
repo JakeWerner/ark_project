@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<nmaprun scanner="nmap" args="nmap -sU -sV -T4 --top-ports 3 -oX - 192.168.1.200" start="1746745000" startstr="Thu May  8 17:06:40 2025" version="7.80" xmloutputversion="1.04">
+<verbose level="0"/>
+<debugging level="0"/>
+<host starttime="1746745000" endtime="1746745060">
+    <status state="up" reason="udp-response" reason_ttl="64"/>
+    <address addr="192.168.1.200" addrtype="ipv4"/>
+    <hostnames/>
+    <ports>
+        <port protocol="udp" portid="53">
+            <state state="open" reason="udp-response" reason_ttl="64"/>
+            <service name="domain" product="ISC BIND" version="9.11.3-1ubuntu1.1" method="probed" conf="10"/>
+        </port>
+        <port protocol="udp" portid="123">
+            <state state="open|filtered" reason="no-response" reason_ttl="0"/>
+            <service name="ntp" method="table" conf="3"/> </port>
+        <port protocol="udp" portid="161">
+            <state state="closed" reason="port-unreach" reason_ttl="64"/>
+        </port>
+    </ports>
+    </host>
+<runstats><finished time="1746745060" timestr="Thu May  8 17:07:40 2025" elapsed="60" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>
