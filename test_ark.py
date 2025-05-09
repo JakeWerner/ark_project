@@ -2,11 +2,12 @@
 import logging
 from autork.engine import ARKEngine
 from autork.datamodels import Host, Port, Service, OSMatch # For type context if needed
-from typing import List
+from typing import List, Optional # Added Optional for tcp_scan_type
 
 # --- Basic Logging Configuration ---
+# Configure logging to see messages from ARK and the test script
 logging.basicConfig(
-    level=logging.INFO, # Change to logging.DEBUG for more detailed messages from ARK
+    level=logging.INFO, # Change to logging.DEBUG for more verbosity from ARK
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
@@ -29,10 +30,21 @@ def run_scan():
     script_arguments = None    # e.g., "http.useragent='MyCustomARKScanner/1.0'"
     scan_timing = 4 # Nmap timing template T0-T5, None for handler default (T4)
     
+    # NEW: Specify TCP Scan Type
+    # Options: "sS" (SYN), "sT" (Connect), "sF" (FIN), "sX" (Xmas), "sN" (Null), "sA" (ACK)
+    # If None, Nmap's default behavior with -sV is used. Many require root.
+    desired_tcp_scan_type: Optional[str] = "sS" # Example: Try a SYN scan
+    # desired_tcp_scan_type: Optional[str] = None # To use Nmap default with -sV
+    
     tcp_ports_to_scan = 20 # Scan fewer ports for a quicker example run
     udp_ports_to_scan = 10 # Scan even fewer UDP ports
+    # -----------------------------
 
     logging.info(f"Starting reconnaissance with ARKEngine on: {test_target_scope}")
+    if desired_tcp_scan_type:
+        logging.info(f"Requested TCP Scan Type: -s{desired_tcp_scan_type.upper()}")
+        if desired_tcp_scan_type.upper() not in ["ST"]: # sT generally doesn't need root
+             logging.warning(f"TCP Scan Type -s{desired_tcp_scan_type.upper()} likely requires root/admin privileges!")
     if should_include_os: logging.warning("OS Detection is ENABLED - this requires root/admin privileges!")
     if should_include_udp: logging.warning("UDP Scan is ENABLED - this requires root/admin privileges and can be slow!")
     if scripts_to_run: logging.info(f"NSE Script Scan ('{scripts_to_run}') is ENABLED.")
@@ -48,7 +60,8 @@ def run_scan():
         nse_script_args=script_arguments,
         include_udp_scan=should_include_udp,
         top_udp_ports=udp_ports_to_scan,
-        timing_template=scan_timing
+        timing_template=scan_timing,
+        tcp_scan_type=desired_tcp_scan_type # <<< Pass the new flag
     )
 
     # --- Process and Print Results ---
@@ -86,6 +99,7 @@ def run_scan():
                             s = port_obj.service
                             service_info = (f"Name: {s.name or 'N/A'}, Prod: {s.product or 'N/A'}, "
                                             f"Ver: {s.version or 'N/A'} ({s.extrainfo or ''})")
+                        # Clearly label protocol
                         print(f"    [+] {port_obj.protocol.upper()} Port: {port_obj.number:<5} ({port_obj.status:<15}) - {service_info}")
                         
                         if port_obj.scripts:
@@ -97,15 +111,14 @@ def run_scan():
             else:
                 print("  No port information scanned/retrieved for this host.")
 
-        # --- NEW: Export results ---
-        if recon_results: # Only export if we have something
+        # --- Export results (as implemented previously) ---
+        if recon_results:
             json_filename = "ark_scan_results.json"
             csv_filename = "ark_scan_results.csv"
             print(f"\nExporting results to {json_filename} and {csv_filename}...")
             engine.export_to_json(recon_results, json_filename)
             engine.export_to_csv(recon_results, csv_filename)
             print("Exports complete.")
-        # --- End Export ---
     else:
         print(f"\n[-] No hosts with details were returned by ARKEngine for {test_target_scope}.")
 

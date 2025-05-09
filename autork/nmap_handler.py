@@ -65,8 +65,7 @@ class NmapHandler:
             return None
 
     def _get_validated_timing_template_value(self, timing_template_input: Optional[int]) -> int:
-        """Validates user timing template input, defaults to 4 if invalid or None."""
-        default_timing = 4 # Nmap's default is T3, but we've been using T4.
+        default_timing = 4
         if timing_template_input is None:
             logger.debug(f"Timing template not specified, defaulting to T{default_timing}.")
             return default_timing
@@ -86,7 +85,6 @@ class NmapHandler:
         xml_root_element_tree = self._run_command(command)
         discovered_hosts: List[Host] = []
         if xml_root_element_tree:
-            # ... (rest of parsing logic as before) ...
             root = xml_root_element_tree.getroot()
             for host_node in root.findall('host'):
                 status_node = host_node.find('status')
@@ -102,7 +100,6 @@ class NmapHandler:
                             if hostname_element is not None:
                                 current_hostname = hostname_element.get('name')
                         discovered_hosts.append(Host(ip=ip_address, status='up', hostname=current_hostname))
-        # ... (logging for no hosts up as before) ...
         return discovered_hosts
 
     def run_port_scan_with_services(
@@ -112,34 +109,60 @@ class NmapHandler:
         include_os_detection: bool = False,
         nse_scripts: Optional[str] = None,
         nse_script_args: Optional[str] = None,
-        timing_template: Optional[int] = None # <<< ADDED
+        timing_template: Optional[int] = None,
+        tcp_scan_type: Optional[str] = None # Expects "S", "T", "A", "F", "X", "N"
     ) -> Dict[str, Any]:
         final_timing_value = self._get_validated_timing_template_value(timing_template)
+        
+        nmap_scan_type_flag_to_add: Optional[str] = None
+        log_scan_type = "Nmap Default for -sV" # Default for logging
+
+        if tcp_scan_type and isinstance(tcp_scan_type, str):
+            type_char = tcp_scan_type.strip().upper()
+            valid_scan_type_chars = ["S", "T", "A", "F", "X", "N"]
+            if type_char in valid_scan_type_chars:
+                nmap_scan_type_flag_to_add = f"-s{type_char}"
+                log_scan_type = f"TCP Scan Type: {nmap_scan_type_flag_to_add}"
+                if type_char != "T":
+                    logger.warning(f"TCP scan type {nmap_scan_type_flag_to_add} typically requires root/administrator privileges.")
+            else:
+                logger.warning(f"Invalid tcp_scan_type character '{tcp_scan_type}' provided. Valid are S, T, A, F, X, N. Using Nmap's default with -sV.")
+        
         logger.debug(f"Initiating TCP port/service/script scan for host: {host_ip} "
                      f"(top_ports={top_ports}, os_detect={include_os_detection}, "
                      f"scripts='{nse_scripts or 'None'}', script_args='{nse_script_args or 'None'}', "
-                     f"timing_template='T{final_timing_value}')")
+                     f"timing_template='T{final_timing_value}', {log_scan_type})")
 
-        command = [self.nmap_path, '-sV', f'-T{final_timing_value}'] # Use validated timing
+        command = [self.nmap_path]
+        if nmap_scan_type_flag_to_add:
+            command.append(nmap_scan_type_flag_to_add)
+        
+        command.append('-sV')
+        command.append(f'-T{final_timing_value}')
+
         if top_ports is not None and top_ports > 0: command.extend(['--top-ports', str(top_ports)])
         elif top_ports == 0: command.extend(['-p', '1-65535'])
-        if include_os_detection: command.append('-O'); logger.info("OS detection requested. Requires root/admin.")
+        if include_os_detection: command.append('-O')
+        
         has_scripts_to_run = False
         if nse_scripts and isinstance(nse_scripts, str) and nse_scripts.strip():
             safe_script_value = nse_scripts.strip()
-            command.extend(['--script', safe_script_value]); logger.info(f"NSE scripts requested: --script {safe_script_value}"); has_scripts_to_run = True
+            command.extend(['--script', safe_script_value]); has_scripts_to_run = True
+        
         if has_scripts_to_run and nse_script_args and isinstance(nse_script_args, str) and nse_script_args.strip():
             safe_script_args_value = nse_script_args.strip()
-            command.extend(['--script-args', safe_script_args_value]); logger.info(f"NSE script arguments provided: --script-args \"{safe_script_args_value}\"")
-        elif nse_script_args and not has_scripts_to_run: logger.warning("NSE script arguments provided, but no scripts were specified to run. Args will be ignored.")
+            command.extend(['--script-args', safe_script_args_value])
+        elif nse_script_args and not has_scripts_to_run:
+            logger.warning("NSE script arguments provided, but no scripts were specified to run. Args will be ignored by Nmap.")
+            
         command.extend(['-oX', '-', host_ip])
+
         xml_root_element_tree = self._run_command(command)
         scan_results: Dict[str, Any] = {
             "ports": [], "os_matches": [], "mac_address": None, "vendor": None,
             "uptime_seconds": None, "last_boot": None, "distance": None, "host_scripts": {}
         }
         if xml_root_element_tree:
-            # ... (rest of parsing logic for ports, OS, scripts, MAC etc. remains the same as the last full version) ...
             root = xml_root_element_tree.getroot()
             host_node = root.find('host')
             if host_node is None:
@@ -201,15 +224,15 @@ class NmapHandler:
         logger.debug(f"TCP port/service/script scan for {host_ip} finished. Returning results.")
         return scan_results
 
-    def run_udp_scan(self, host_ip: str, top_ports: int = 100, include_version: bool = True, timing_template: Optional[int] = None) -> List[Port]: # Added timing
+    def run_udp_scan(self, host_ip: str, top_ports: int = 100, include_version: bool = True, timing_template: Optional[int] = None) -> List[Port]:
         final_timing_value = self._get_validated_timing_template_value(timing_template)
         logger.info(f"Initiating UDP scan for host: {host_ip} (top_ports={top_ports}, version_detect={include_version}, timing_template='T{final_timing_value}')")
+        # ... (rest of UDP scan implementation remains the same as the last full file version) ...
         logger.warning("UDP scanning requires root/administrator privileges and can be very slow.")
         command = [self.nmap_path, '-sU', f'-T{final_timing_value}']
         if include_version: command.append('-sV')
         if top_ports is not None and top_ports > 0: command.extend(['--top-ports', str(top_ports)])
         command.extend(['-oX', '-', host_ip])
-        # ... (rest of UDP parsing logic remains the same as the last full version) ...
         xml_root_element_tree = self._run_command(command)
         parsed_ports: List[Port] = []
         if xml_root_element_tree:
@@ -241,5 +264,3 @@ class NmapHandler:
                     except Exception as e: logger.error(f"Error parsing a UDP port element for {host_ip}: {e}", exc_info=True)
         logger.debug(f"UDP scan for {host_ip} finished. Parsed {len(parsed_ports)} ports.")
         return parsed_ports
-
-# ... (Main block for direct testing) ...
