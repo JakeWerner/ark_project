@@ -18,13 +18,43 @@ class ARKEngine:
             logger.error(f"ARKEngine Initialization Error: {e}", exc_info=True)
             raise e
 
-    def discover_live_hosts(self, target_scope: str, timing_template: Optional[int] = None) -> List[Host]:
-        # ... (remains the same as last full version) ...
-        default_timing_for_log = self.nmap_handler._get_validated_timing_template_value(None)
-        logger.info(f"ARKEngine: Discovering live hosts in {target_scope} (Timing: T{timing_template if timing_template is not None else default_timing_for_log})...")
-        discovered_hosts: List[Host] = self.nmap_handler.run_ping_scan(target_scope, timing_template=timing_template)
-        if discovered_hosts: logger.info(f"ARKEngine: Found {len(discovered_hosts)} live host(s).")
-        else: logger.info(f"ARKEngine: No live hosts found up in {target_scope} by ping scan.")
+    def discover_live_hosts(
+        self,
+        target_scope: Optional[str] = None, # Remains, but used if target_file is None
+        timing_template: Optional[int] = None,
+        input_target_file: Optional[str] = None, # <<< NEW
+        exclude_targets: Optional[str] = None,   # <<< NEW
+        exclude_file: Optional[str] = None       # <<< NEW
+    ) -> List[Host]:
+        """
+        Discovers live hosts using various target specifications and exclusions.
+        """
+        log_target_spec = ""
+        if input_target_file:
+            log_target_spec = f"from file {input_target_file}"
+        elif target_scope:
+            log_target_spec = f"scope {target_scope}"
+        else:
+            logger.error("ARKEngine: Host discovery called without target_scope or input_target_file.")
+            return []
+            
+        timing_log = f"T{timing_template if timing_template is not None else self.nmap_handler._get_validated_timing_template_value(None)}"
+        logger.info(f"ARKEngine: Discovering live hosts for targets {log_target_spec} (Timing: {timing_log})...")
+        if exclude_targets: logger.info(f"ARKEngine: Excluding targets: {exclude_targets}")
+        if exclude_file: logger.info(f"ARKEngine: Excluding targets from file: {exclude_file}")
+
+        discovered_hosts: List[Host] = self.nmap_handler.run_ping_scan(
+            target_scope=target_scope, # Pass original scope
+            timing_template=timing_template,
+            input_target_file=input_target_file,
+            exclude_targets=exclude_targets,
+            exclude_file=exclude_file
+        )
+        # ... (rest of method remains the same) ...
+        if discovered_hosts:
+            logger.info(f"ARKEngine: Found {len(discovered_hosts)} live host(s).")
+        else:
+            logger.info(f"ARKEngine: No live hosts found up for the specified targets/exclusions by ping scan.")
         return discovered_hosts
 
 
@@ -81,39 +111,66 @@ class ARKEngine:
 
 
     def perform_basic_recon(
-        self, target_scope: str, top_ports: int = 100,
+        self,
+        target_scope: Optional[str] = None, # <<< Now optional if target_file used
+        top_ports: int = 100,
         include_os_detection: bool = False,
         nse_scripts: Optional[str] = None,
         nse_script_args: Optional[str] = None,
         include_udp_scan: bool = False, top_udp_ports: int = 50,
         timing_template: Optional[int] = None,
-        tcp_scan_type: Optional[str] = None # <<< ADDED
+        tcp_scan_type: Optional[str] = None,
+        input_target_file: Optional[str] = None, # <<< NEW
+        exclude_targets: Optional[str] = None,   # <<< NEW
+        exclude_file: Optional[str] = None       # <<< NEW
         ) -> List[Host]:
+        """
+        Performs a configurable reconnaissance workflow with advanced target management.
+        Either target_scope or input_target_file must be provided.
+        """
+        if not target_scope and not input_target_file:
+            logger.error("ARKEngine: perform_basic_recon called without target_scope or input_target_file.")
+            return []
+
+        log_target_spec = f"file {input_target_file}" if input_target_file else f"scope {target_scope}"
+        # ... (build full log message as before, including new params for logging) ...
         default_timing_for_log = self.nmap_handler._get_validated_timing_template_value(None)
         scan_type_log = f"TCP Scan Type: {f'-s{tcp_scan_type.upper()}' if tcp_scan_type and tcp_scan_type.strip().upper() in ['S','T','A','F','X','N'] else 'Nmap Default with -sV'}"
-        logger.info(f"ARKEngine: Starting full reconnaissance for target: {target_scope} "
+        logger.info(f"ARKEngine: Starting full reconnaissance for targets {log_target_spec} "
                     f"(TCP ports={top_ports}, OS={include_os_detection}, "
                     f"Scripts='{nse_scripts or 'None'}', ScriptArgs='{nse_script_args or 'None'}', "
                     f"UDP={include_udp_scan}, UDP ports={top_udp_ports if include_udp_scan else 'N/A'}, "
                     f"Timing=T{timing_template if timing_template is not None else default_timing_for_log}, {scan_type_log})")
+        if exclude_targets: logger.info(f"ARKEngine: Recon excluding targets: {exclude_targets}")
+        if exclude_file: logger.info(f"ARKEngine: Recon excluding targets from file: {exclude_file}")
 
-        live_hosts: List[Host] = self.discover_live_hosts(target_scope, timing_template=timing_template)
+
+        live_hosts: List[Host] = self.discover_live_hosts(
+            target_scope=target_scope, # Pass original scope along with file options
+            timing_template=timing_template,
+            input_target_file=input_target_file,
+            exclude_targets=exclude_targets,
+            exclude_file=exclude_file
+        )
+
         if not live_hosts:
-            logger.info(f"ARKEngine: No live hosts to perform scans on for {target_scope}.")
+            logger.info(f"ARKEngine: No live hosts to perform detailed scans on for targets {log_target_spec}.")
             return []
+
         for host_obj in live_hosts:
+            # ... (scan_host_deep and scan_host_udp calls remain the same, using host_obj.ip) ...
             logger.info(f"\n--- Processing host: {host_obj.ip} ({host_obj.hostname or 'N/A'}) ---")
             self.scan_host_deep(
                 host_obj, top_ports=top_ports, include_os_detection=include_os_detection,
                 nse_scripts=nse_scripts, nse_script_args=nse_script_args,
-                timing_template=timing_template, tcp_scan_type=tcp_scan_type # <<< Pass through
+                timing_template=timing_template, tcp_scan_type=tcp_scan_type
             )
             if include_udp_scan:
                 self.scan_host_udp(
                     host_obj, top_ports=top_udp_ports, include_version=True,
                     timing_template=timing_template
                 )
-        logger.info(f"\n[*] ARKEngine: Full reconnaissance complete for {target_scope}.")
+        # ... (rest of method remains the same) ...
         return live_hosts
 
     # --- EXPORT METHODS (remain the same) ---

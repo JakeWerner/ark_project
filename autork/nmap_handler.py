@@ -78,12 +78,80 @@ class NmapHandler:
             )
             return default_timing
 
-    def run_ping_scan(self, target_scope: str, timing_template: Optional[int] = None) -> List[Host]:
+    def run_ping_scan(
+        self,
+        target_scope: Optional[str] = None, # Now optional if target_file is used
+        timing_template: Optional[int] = None,
+        input_target_file: Optional[str] = None, # <<< NEW
+        exclude_targets: Optional[str] = None,   # <<< NEW (for --exclude string)
+        exclude_file: Optional[str] = None       # <<< NEW (for --excludefile)
+    ) -> List[Host]:
+        """
+        Performs a ping scan (host discovery).
+        Targets can be specified via target_scope or a file. Exclusions can also be applied.
+
+        :param target_scope: Direct target string (e.g., "192.168.1.0/24", "host.com").
+                             Used if input_target_file is None.
+        :param timing_template: Nmap timing template (0-5).
+        :param input_target_file: Path to a file containing targets (like Nmap -iL).
+        :param exclude_targets: Comma-separated string of hosts/networks to exclude.
+        :param exclude_file: Path to a file containing hosts/networks to exclude.
+        :return: List of Host objects found up.
+        """
         final_timing_value = self._get_validated_timing_template_value(timing_template)
-        logger.debug(f"Initiating ping scan for target: {target_scope} with timing -T{final_timing_value}")
-        command = [self.nmap_path, '-sn', f'-T{final_timing_value}', '-oX', '-', target_scope]
+        
+        log_target_spec = ""
+        if input_target_file:
+            log_target_spec = f"from file {input_target_file}"
+        elif target_scope:
+            log_target_spec = f"scope {target_scope}"
+        else:
+            # This case should ideally be prevented by ARKEngine
+            logger.error("Ping scan initiated without a target_scope or input_target_file.")
+            return []
+
+        logger.debug(f"Initiating ping scan for targets {log_target_spec} with timing -T{final_timing_value}")
+
+        command = [self.nmap_path, '-sn', f'-T{final_timing_value}']
+
+        # Add target specification
+        if input_target_file and isinstance(input_target_file, str) and input_target_file.strip():
+            command.extend(['-iL', input_target_file.strip()])
+            logger.info(f"Reading targets from file: {input_target_file.strip()}")
+        elif target_scope and isinstance(target_scope, str) and target_scope.strip():
+            # Nmap command will have target_scope appended at the end
+            pass
+        else:
+            logger.error("No valid target specification (scope or file) for ping scan.")
+            return [] # Or raise an error
+
+        # Add exclusions
+        if exclude_targets and isinstance(exclude_targets, str) and exclude_targets.strip():
+            command.extend(['--exclude', exclude_targets.strip()])
+            logger.info(f"Excluding targets: {exclude_targets.strip()}")
+        
+        if exclude_file and isinstance(exclude_file, str) and exclude_file.strip():
+            command.extend(['--excludefile', exclude_file.strip()])
+            logger.info(f"Excluding targets from file: {exclude_file.strip()}")
+
+        command.extend(['-oX', '-']) # XML output to stdout
+
+        # Add target_scope to command only if input_target_file was not used
+        # Nmap can take both, but -iL usually covers the target list.
+        # For simplicity, if -iL is used, we won't add target_scope as a command line arg here.
+        # If -iL is not used, target_scope *must* be present.
+        if not (input_target_file and isinstance(input_target_file, str) and input_target_file.strip()):
+            if target_scope and isinstance(target_scope, str) and target_scope.strip():
+                command.append(target_scope.strip())
+            else:
+                # This state should ideally be caught before calling _run_command
+                logger.error("Ping scan target_scope is missing and no input_target_file was provided.")
+                return []
+
+
         xml_root_element_tree = self._run_command(command)
         discovered_hosts: List[Host] = []
+        # ... (rest of XML parsing logic for ping scan remains the same) ...
         if xml_root_element_tree:
             root = xml_root_element_tree.getroot()
             for host_node in root.findall('host'):
