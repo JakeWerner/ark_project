@@ -65,6 +65,7 @@ class NmapHandler:
             return None
 
     def run_ping_scan(self, target_scope: str) -> List[Host]:
+        # ... (run_ping_scan remains the same as the last version with debug logging) ...
         logger.debug(f"Initiating ping scan for target: {target_scope}")
         command = [self.nmap_path, '-sn', '-T4', '-oX', '-', target_scope]
         xml_root_element_tree = self._run_command(command)
@@ -92,13 +93,12 @@ class NmapHandler:
                                 current_hostname = hostname_element.get('name')
                         logger.debug(f"  >>> Found UP host! Appending Host(ip={ip_address}, hostname={current_hostname})")
                         discovered_hosts.append(Host(ip=ip_address, status='up', hostname=current_hostname))
-        # ... (logging for no hosts up) ...
         if not discovered_hosts and xml_root_element_tree is not None:
-            root = xml_root_element_tree.getroot()
-            runstats_node = root.find('runstats/hosts')
-            if runstats_node is not None and runstats_node.get('up') == "0" and runstats_node.get('total') != "0":
+             root = xml_root_element_tree.getroot()
+             runstats_node = root.find('runstats/hosts')
+             if runstats_node is not None and runstats_node.get('up') == "0" and runstats_node.get('total') != "0":
                  logger.info(f"Nmap ping scan completed. No hosts found up in scope: {target_scope}")
-            elif runstats_node is None or runstats_node.get('total') == "0":
+             elif runstats_node is None or runstats_node.get('total') == "0":
                  logger.warning(f"Nmap ping scan completed but reported 0 total hosts. Check target specification: {target_scope}")
         logger.debug(f"Ping scan for {target_scope} finished. Returning {len(discovered_hosts)} hosts.")
         return discovered_hosts
@@ -108,13 +108,15 @@ class NmapHandler:
         host_ip: str,
         top_ports: int = 100,
         include_os_detection: bool = False,
-        nse_scripts: Optional[str] = None # <<< CHANGED PARAMETER
+        nse_scripts: Optional[str] = None,
+        nse_script_args: Optional[str] = None # <<< NEW PARAMETER
     ) -> Dict[str, Any]:
         """
-        Performs a TCP port scan, optionally OS detection and specified NSE scripts.
+        Performs a TCP port scan, optionally OS detection, specified NSE scripts, and script arguments.
         """
         logger.debug(f"Initiating TCP port/service/script scan for host: {host_ip} "
-                     f"(top_ports={top_ports}, os_detect={include_os_detection}, scripts='{nse_scripts or 'None'}')")
+                     f"(top_ports={top_ports}, os_detect={include_os_detection}, "
+                     f"scripts='{nse_scripts or 'None'}', script_args='{nse_script_args or 'None'}')")
 
         command = [self.nmap_path, '-sV', '-T4']
         if top_ports is not None and top_ports > 0:
@@ -126,34 +128,35 @@ class NmapHandler:
             command.append('-O')
             logger.info("OS detection requested. Requires root/admin.")
 
-        # --- NEW: Handle nse_scripts parameter ---
+        has_scripts_to_run = False
         if nse_scripts and isinstance(nse_scripts, str) and nse_scripts.strip():
-            safe_script_arg = nse_scripts.strip()
-            command.extend(['--script', safe_script_arg])
-            logger.info(f"NSE scripts requested: --script {safe_script_arg}")
-        # --- End NSE handling ---
+            safe_script_value = nse_scripts.strip()
+            command.extend(['--script', safe_script_value])
+            logger.info(f"NSE scripts requested: --script {safe_script_value}")
+            has_scripts_to_run = True
+
+        if has_scripts_to_run and nse_script_args and isinstance(nse_script_args, str) and nse_script_args.strip():
+            safe_script_args_value = nse_script_args.strip()
+            command.extend(['--script-args', safe_script_args_value])
+            logger.info(f"NSE script arguments provided: --script-args \"{safe_script_args_value}\"")
+        elif nse_script_args and not has_scripts_to_run:
+            logger.warning("NSE script arguments provided, but no scripts were specified to run. Arguments will be ignored by Nmap.")
 
         command.extend(['-oX', '-', host_ip])
-
         xml_root_element_tree = self._run_command(command)
-
         scan_results: Dict[str, Any] = {
             "ports": [], "os_matches": [], "mac_address": None, "vendor": None,
-            "uptime_seconds": None, "last_boot": None, "distance": None,
-            "host_scripts": {}
+            "uptime_seconds": None, "last_boot": None, "distance": None, "host_scripts": {}
         }
 
         if xml_root_element_tree:
             root = xml_root_element_tree.getroot()
             host_node = root.find('host')
-
             if host_node is None:
-                # ... (error handling as before) ...
                 logger.warning(f"No 'host' node found in Nmap XML output for {host_ip}.")
                 return scan_results
 
-            # --- Parsing logic ---
-            should_parse_scripts = bool(nse_scripts and nse_scripts.strip())
+            should_parse_scripts = has_scripts_to_run
 
             # Parse Ports and Port Scripts
             ports_parent_node = host_node.find('ports')
@@ -163,12 +166,10 @@ class NmapHandler:
                         port_num = int(port_element.get('portid'))
                         protocol = port_element.get('protocol')
                         if protocol != 'tcp': continue
-
                         state_node = port_element.find('state')
                         if state_node is None: continue
                         status = state_node.get('state')
                         reason = state_node.get('reason', '')
-
                         port_service_obj: Optional[Service] = None
                         if status == 'open':
                             service_node = port_element.find('service')
@@ -179,8 +180,6 @@ class NmapHandler:
                                     ostype=service_node.get('ostype', ""), method=service_node.get('method', ""),
                                     conf=int(service_node.get('conf', "0"))
                                 )
-
-                        # Parse Port Script Output
                         port_scripts_data: Optional[Dict[str, str]] = None
                         if should_parse_scripts:
                             temp_scripts_data = {}
@@ -189,18 +188,14 @@ class NmapHandler:
                                 script_output = script_node.get('output')
                                 if script_id and script_output is not None:
                                     temp_scripts_data[script_id] = script_output
-                            if temp_scripts_data:
-                                port_scripts_data = temp_scripts_data
-
+                            if temp_scripts_data: port_scripts_data = temp_scripts_data
                         scan_results["ports"].append(Port(
                             number=port_num, protocol=protocol, status=status,
-                            service=port_service_obj, reason=reason,
-                            scripts=port_scripts_data
+                            service=port_service_obj, reason=reason, scripts=port_scripts_data
                         ))
                     except Exception as e:
                         logger.error(f"Error parsing a TCP port element for {host_ip}: {e}", exc_info=True)
                         continue
-
             # Parse OS Detection Results
             if include_os_detection:
                  os_node = host_node.find('os')
@@ -211,7 +206,6 @@ class NmapHandler:
                              accuracy=int(osmatch_node.get('accuracy', 0)),
                              line=int(osmatch_node.get('line', 0))
                           ))
-
             # Parse Host Script Output
             if should_parse_scripts:
                 hostscript_node = host_node.find('hostscript')
@@ -220,11 +214,8 @@ class NmapHandler:
                     for script_node in hostscript_node.findall('script'):
                         script_id = script_node.get('id')
                         script_output = script_node.get('output')
-                        if script_id and script_output is not None:
-                            host_scripts_data[script_id] = script_output
-                    if host_scripts_data:
-                        scan_results["host_scripts"] = host_scripts_data
-
+                        if script_id and script_output is not None: host_scripts_data[script_id] = script_output
+                    if host_scripts_data: scan_results["host_scripts"] = host_scripts_data
             # Parse MAC, Vendor, Uptime, Distance
             for address_element in host_node.findall('address'):
                  if address_element.get('addrtype') == 'mac':
@@ -232,19 +223,15 @@ class NmapHandler:
                      scan_results['vendor'] = address_element.get('vendor')
                      break
             uptime_node = host_node.find('uptime')
-            if uptime_node is not None:
-                 scan_results['uptime_seconds'] = int(uptime_node.get('seconds', "0"))
-                 scan_results['last_boot'] = uptime_node.get('lastboot')
+            if uptime_node is not None: scan_results['uptime_seconds'] = int(uptime_node.get('seconds', "0")); scan_results['last_boot'] = uptime_node.get('lastboot')
             distance_node = host_node.find('distance')
-            if distance_node is not None:
-                 scan_results['distance'] = int(distance_node.get('value', "0"))
-
+            if distance_node is not None: scan_results['distance'] = int(distance_node.get('value', "0"))
         logger.debug(f"TCP port/service/script scan for {host_ip} finished. Returning results.")
         return scan_results
 
     def run_udp_scan(self, host_ip: str, top_ports: int = 100, include_version: bool = True) -> List[Port]:
         """ Performs a UDP scan on the specified host. """
-        # ... (Implementation remains the same as before) ...
+        # ... (UDP scan implementation remains the same as last version) ...
         logger.info(f"Initiating UDP scan for host: {host_ip} (top_ports={top_ports}, version_detect={include_version})")
         logger.warning("UDP scanning requires root/administrator privileges and can be very slow.")
         command = [self.nmap_path, '-sU', '-T4']
@@ -289,4 +276,8 @@ class NmapHandler:
         logger.debug(f"UDP scan for {host_ip} finished. Parsed {len(parsed_ports)} ports.")
         return parsed_ports
 
-# ... (Main block for direct testing remains optional) ...
+# ... (Main block for direct testing) ...
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logger.info("--- Manual Testing NmapHandler ---")
+    # ... (existing __main__ test code) ...
