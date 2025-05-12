@@ -189,7 +189,7 @@ class NmapHandler:
         timing_template: Optional[int] = None,
         tcp_scan_type: Optional[str] = None,
         ipv6: bool = False,
-        include_reason: bool = False # <<< MODIFIED/ADDED PARAMETER
+        include_reason: bool = False
     ) -> Dict[str, Any]:
         final_timing_value = self._get_validated_timing_template_value(timing_template)
         nmap_scan_type_flag_to_add: Optional[str] = None
@@ -210,7 +210,7 @@ class NmapHandler:
                      f"(top_ports={top_ports}, os_detect={include_os_detection}, "
                      f"scripts='{nse_scripts or 'None'}', script_args='{nse_script_args or 'None'}', "
                      f"timing_template='T{final_timing_value}', {log_scan_type}"
-                     f"{', IPv6' if ipv6 else ''}{', Reason: ' + str(include_reason) if include_reason else ''})") # Updated log
+                     f"{', IPv6' if ipv6 else ''}{', Reason: ' + str(include_reason) if include_reason else ''})")
 
         command = [self.nmap_path]
         if ipv6: command.append("-6")
@@ -218,7 +218,7 @@ class NmapHandler:
         
         command.extend(['-sV', f'-T{final_timing_value}'])
         
-        if include_reason: # <<< ADDED THIS BLOCK
+        if include_reason:
             command.append("--reason")
 
         if top_ports is not None and top_ports > 0: command.extend(['--top-ports', str(top_ports)])
@@ -262,7 +262,7 @@ class NmapHandler:
                         if protocol != 'tcp': continue 
                         state_node = port_element.find('state');
                         if state_node is None: continue
-                        status = state_node.get('state'); reason = state_node.get('reason', '') # Reason is parsed here
+                        status = state_node.get('state'); reason = state_node.get('reason', '')
                         port_service_obj: Optional[Service] = None; port_scripts_data: Optional[Dict[str, str]] = None
                         if status == 'open':
                             service_node = port_element.find('service')
@@ -308,7 +308,7 @@ class NmapHandler:
         final_timing_value = self._get_validated_timing_template_value(timing_template)
         logger.info(f"Initiating UDP scan for host: {host_ip} (top_ports={top_ports}, version_detect={include_version}, "
                     f"timing_template='T{final_timing_value}'{', IPv6' if ipv6 else ''}"
-                    f"{', Reason: ' + str(include_reason) if include_reason else ''})") # Updated log
+                    f"{', Reason: ' + str(include_reason) if include_reason else ''})")
         logger.warning("UDP scanning requires root/administrator privileges and can be very slow.")
         
         command = [self.nmap_path]

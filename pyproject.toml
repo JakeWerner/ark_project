@@ -1,63 +1,81 @@
 # ark_project/pyproject.toml
 
 [build-system]
-# Specifies that Hatchling is needed to build the package
-requires = ["hatchling"]
+requires = ["hatchling>=1.11.0"] # Specify a reasonable minimum version
 build-backend = "hatchling.build"
 
 [project]
-# Core metadata (replace placeholders)
 name = "autork"
-version = "0.5.0"
+version = "0.5.0" 
 authors = [
-  { name="Your Name", email="your.email@example.com" },
+  # !!! REPLACE with your actual name and email !!!
+  { name="Jacob Werner", email="your.email@example.com" }, 
 ]
-description = "A Python library for automating Nmap reconnaissance tasks."
-readme = "README.md" # Specifies the README file
-requires-python = ">=3.8" # Your minimum supported Python version
-license = { text = "MIT License" } 
-keywords = ["nmap", "reconnaissance", "security", "pentest", "automation", "network"]
+description = "A Python library for orchestrating Nmap scans, offering flexible control over scan types, NSE scripts, target management, and providing structured output with export options."
+readme = "README.md" # Your main README file
+requires-python = ">=3.8" # Minimum Python version you support
+
+license = { file = "LICENSE" } 
+
+keywords = [
+    "nmap", "scanner", "network", "reconnaissance", "security", 
+    "pentest", "automation", "port scanner", "nse", "ipv6", 
+    "cybersecurity", "network mapping"
+]
 classifiers = [
-    # Trove classifiers provide standardized metadata (https://pypi.org/classifiers/)
-    "Development Status :: 3 - Alpha", # Start with Alpha or Beta status
+    # See https://pypi.org/classifiers/
+    "Development Status :: 4 - Beta", # Or "3 - Alpha" if you prefer
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License", # Match your chosen license
-    "Operating System :: OS Independent", # Assumes it works cross-platform (Nmap itself is cross-platform)
+    "Intended Audience :: Information Technology",
+    "Topic :: Security",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Networking :: Monitoring",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+    # !!! REPLACE with your chosen license classifier !!!
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Security",
-    "Topic :: System :: Networking :: Monitoring",
-    "Topic :: Utilities",
 ]
 
-# Dependencies required for the library to run
-dependencies = [
-    # Add runtime dependencies here if any are added later
-    # e.g., "requests>=2.20.0"
-    # Currently, autork only uses the standard library.
+dependencies = []
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",      # For running tests
+    "pytest-mock>=3.0", # For mocking capabilities in tests
+]
+dev = [
+    "autork[test]",   # Includes the 'test' dependencies
+    "build>=0.10",    # For building the package
+    "twine>=4.0",     # For uploading to PyPI (later, if you choose)
 ]
 
 [project.urls]
-# Optional links for users
-"Homepage" = "https://github.com/JakeWerner/autork" # Replace with your repo URL
-"Repository" = "https://github.com/JakeWerner/autork" # Replace
-"Bug Tracker" = "https://github.com/JakeWerner/autork/issues" # Replace
+"Homepage" = "https://github.com/JakeWerner/autork"
+"Repository" = "https://github.com/JakeWerner/autork"
+"Bug Tracker" = "https://github.com/JakeWerner/autork/issues"
+# "Documentation" = "https://autork.readthedocs.io" # If you set up Read the Docs later
 
-# Optional: If you add command-line scripts later
-# [project.scripts]
-# ark-scan = "autork.cli:main" # Example if you create a cli entry point
+[tool.hatch.version]
 
-# Configuration specific to the build backend (Hatchling in this case)
-# Tells Hatchling where to find the actual package code
 [tool.hatch.build.targets.sdist]
-# Include everything under the 'autork' directory in the source distribution
-include = ["/autork", "/tests"] # Include tests in sdist if desired
+
+include = [
+    "/autork",
+    "/tests",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml"
+]
+# exclude = []
 
 [tool.hatch.build.targets.wheel]
-# Include only the 'autork' directory in the wheel distribution
+
 packages = ["autork"]
