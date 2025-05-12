@@ -180,34 +180,46 @@ class NmapHandler:
         return discovered_hosts
 
     def run_port_scan_with_services(
-        self, host_ip: str, top_ports: int = 100, include_os_detection: bool = False,
-        nse_scripts: Optional[str] = None, nse_script_args: Optional[str] = None,
-        timing_template: Optional[int] = None, tcp_scan_type: Optional[str] = None,
-        ipv6: bool = False
+        self,
+        host_ip: str,
+        top_ports: int = 100,
+        include_os_detection: bool = False,
+        nse_scripts: Optional[str] = None,
+        nse_script_args: Optional[str] = None,
+        timing_template: Optional[int] = None,
+        tcp_scan_type: Optional[str] = None,
+        ipv6: bool = False,
+        include_reason: bool = False # <<< MODIFIED/ADDED PARAMETER
     ) -> Dict[str, Any]:
         final_timing_value = self._get_validated_timing_template_value(timing_template)
-        nmap_scan_type_flag_to_add: Optional[str] = None; log_scan_type = "Nmap Default for -sV"
+        nmap_scan_type_flag_to_add: Optional[str] = None
+        log_scan_type = "Nmap Default for -sV"
         
         if tcp_scan_type and isinstance(tcp_scan_type, str):
             type_char = tcp_scan_type.strip().upper()
             valid_scan_type_chars = ["S", "T", "A", "F", "X", "N"]
             if type_char in valid_scan_type_chars:
-                nmap_scan_type_flag_to_add = f"-s{type_char}"; log_scan_type = f"TCP Scan Type: {nmap_scan_type_flag_to_add}"
-                if type_char != "T" and not (ipv6 and type_char == "S"): # -sT generally safe, -sS might be ok for IPv6 without root sometimes
+                nmap_scan_type_flag_to_add = f"-s{type_char}"
+                log_scan_type = f"TCP Scan Type: {nmap_scan_type_flag_to_add}"
+                if type_char != "T" and not (ipv6 and type_char == "S"):
                     logger.warning(f"TCP scan type {nmap_scan_type_flag_to_add} often requires root/admin privileges.")
             else:
-                logger.warning(f"Invalid tcp_scan_type char '{tcp_scan_type}'. Valid: S,T,A,F,X,N. Using Nmap default.")
+                logger.warning(f"Invalid tcp_scan_type character '{tcp_scan_type}'. Using Nmap's default with -sV.")
         
         logger.debug(f"Initiating TCP port/service/script scan for host: {host_ip} "
                      f"(top_ports={top_ports}, os_detect={include_os_detection}, "
                      f"scripts='{nse_scripts or 'None'}', script_args='{nse_script_args or 'None'}', "
-                     f"timing_template='T{final_timing_value}', {log_scan_type}{', IPv6' if ipv6 else ''})")
+                     f"timing_template='T{final_timing_value}', {log_scan_type}"
+                     f"{', IPv6' if ipv6 else ''}{', Reason: ' + str(include_reason) if include_reason else ''})") # Updated log
 
         command = [self.nmap_path]
         if ipv6: command.append("-6")
         if nmap_scan_type_flag_to_add: command.append(nmap_scan_type_flag_to_add)
         
         command.extend(['-sV', f'-T{final_timing_value}'])
+        
+        if include_reason: # <<< ADDED THIS BLOCK
+            command.append("--reason")
 
         if top_ports is not None and top_ports > 0: command.extend(['--top-ports', str(top_ports)])
         elif top_ports == 0: command.extend(['-p', '1-65535'])
@@ -239,23 +251,20 @@ class NmapHandler:
 
             should_parse_scripts = has_scripts_to_run
             
+            # XML Parsing for ports, OS, scripts, MAC, etc. remains the same.
+            # The 'reason' attribute is already being parsed from the <state> tag if present.
+            # Using --reason in Nmap command makes Nmap populate this attribute more reliably/detailed.
             ports_parent_node = host_node.find('ports')
             if ports_parent_node is not None:
                 for port_element in ports_parent_node.findall('port'):
                     try:
                         port_num = int(port_element.get('portid')); protocol = port_element.get('protocol')
-                        # This method focuses on TCP results primarily.
-                        # If Nmap somehow reports other protocols here, we'd usually ignore them
-                        # unless the scan type explicitly targeted them (e.g. for -sO IP Protocol Scan).
-                        # For now, we stick to TCP for port details.
-                        if protocol != 'tcp': 
-                            logger.debug(f"Skipping non-TCP port {port_num}/{protocol} in TCP focused scan parsing.")
-                            continue
+                        if protocol != 'tcp': continue 
                         state_node = port_element.find('state');
                         if state_node is None: continue
-                        status = state_node.get('state'); reason = state_node.get('reason', '')
+                        status = state_node.get('state'); reason = state_node.get('reason', '') # Reason is parsed here
                         port_service_obj: Optional[Service] = None; port_scripts_data: Optional[Dict[str, str]] = None
-                        if status == 'open': # Service and script info typically for open ports
+                        if status == 'open':
                             service_node = port_element.find('service')
                             if service_node is not None:
                                 port_service_obj = Service(
@@ -264,31 +273,28 @@ class NmapHandler:
                                     ostype=service_node.get('ostype', ""), method=service_node.get('method', ""),
                                     conf=int(service_node.get('conf', "0")))
                         if should_parse_scripts:
-                            temp_scripts_data = {s.get('id'): s.get('output', '') for s in port_element.findall('script') if s.get('id')} # Ensure output is str
+                            temp_scripts_data = {s.get('id'): s.get('output', '') for s in port_element.findall('script') if s.get('id')}
                             if temp_scripts_data: port_scripts_data = temp_scripts_data
                         scan_results["ports"].append(Port(number=port_num, protocol=protocol, status=status, service=port_service_obj, reason=reason, scripts=port_scripts_data))
                     except Exception as e: logger.error(f"Error parsing a TCP port element for {host_ip}: {e}", exc_info=True)
             
-            if include_os_detection:
+            if include_os_detection: # OS parsing
                  os_node = host_node.find('os')
                  if os_node is not None:
                      for osmatch_node in os_node.findall('osmatch'):
                           scan_results["os_matches"].append(OSMatch(name=osmatch_node.get('name', 'Unknown OS'), accuracy=int(osmatch_node.get('accuracy', 0)),line=int(osmatch_node.get('line', 0))))
             
-            if should_parse_scripts:
+            if should_parse_scripts: # Host scripts parsing
                 hostscript_node = host_node.find('hostscript')
                 if hostscript_node is not None:
-                    temp_host_scripts = {s.get('id'): s.get('output', '') for s in hostscript_node.findall('script') if s.get('id')} # Ensure output is str
+                    temp_host_scripts = {s.get('id'): s.get('output', '') for s in hostscript_node.findall('script') if s.get('id')}
                     if temp_host_scripts: scan_results["host_scripts"] = temp_host_scripts
             
-            # MAC address for IPv6 might be from Neighbor Discovery, not always present for remote.
-            # The _get_ip_from_host_node also extracts MAC if available during ping scan.
-            # Here we just check if Nmap included it in the portscan output for the target IP.
+            # MAC, Uptime, Distance parsing
             for addr_el in host_node.findall('address'):
                 if addr_el.get('addrtype') == 'mac':
                     scan_results['mac_address'] = addr_el.get('addr')
-                    scan_results['vendor'] = addr_el.get('vendor')
-                    break 
+                    scan_results['vendor'] = addr_el.get('vendor'); break 
             uptime_node = host_node.find('uptime')
             if uptime_node is not None: scan_results['uptime_seconds'] = int(uptime_node.get('seconds', "0")); scan_results['last_boot'] = uptime_node.get('lastboot')
             distance_node = host_node.find('distance')
@@ -297,22 +303,31 @@ class NmapHandler:
         return scan_results
 
     def run_udp_scan(self, host_ip: str, top_ports: int = 100, include_version: bool = True,
-                     timing_template: Optional[int] = None, ipv6: bool = False) -> List[Port]:
+                     timing_template: Optional[int] = None, ipv6: bool = False,
+                     include_reason: bool = False) -> List[Port]:
         final_timing_value = self._get_validated_timing_template_value(timing_template)
-        logger.info(f"Initiating UDP scan for host: {host_ip} (top_ports={top_ports}, version_detect={include_version}, timing_template='T{final_timing_value}'{', IPv6' if ipv6 else ''})")
+        logger.info(f"Initiating UDP scan for host: {host_ip} (top_ports={top_ports}, version_detect={include_version}, "
+                    f"timing_template='T{final_timing_value}'{', IPv6' if ipv6 else ''}"
+                    f"{', Reason: ' + str(include_reason) if include_reason else ''})") # Updated log
         logger.warning("UDP scanning requires root/administrator privileges and can be very slow.")
+        
         command = [self.nmap_path]
         if ipv6: command.append("-6")
         command.extend(['-sU', f'-T{final_timing_value}'])
         if include_version: command.append('-sV')
+        
+        if include_reason:
+            command.append("--reason")
+            
         if top_ports is not None and top_ports > 0: command.extend(['--top-ports', str(top_ports)])
         command.extend(['-oX', '-', host_ip])
+        
         xml_root_element_tree = self._run_command(command)
         parsed_ports: List[Port] = []
         if xml_root_element_tree:
             root = xml_root_element_tree.getroot()
             host_node = root.find('host')
-            if host_node is None: logger.warning(f"No 'host' node found in Nmap UDP scan XML for {host_ip}."); return parsed_ports
+            if host_node is None: logger.warning(f"No 'host' node in UDP XML for {host_ip}."); return parsed_ports
             ports_parent_node = host_node.find('ports')
             if ports_parent_node is not None:
                 for port_element in ports_parent_node.findall('port'):
@@ -321,14 +336,13 @@ class NmapHandler:
                         if protocol != 'udp': continue
                         state_node = port_element.find('state');
                         if state_node is None: continue
-                        status = state_node.get('state'); reason = state_node.get('reason', '')
+                        status = state_node.get('state'); reason = state_node.get('reason', '') # Reason is parsed here
                         port_service_obj: Optional[Service] = None
-                        if include_version and ('open' in status): # Service info for open or open|filtered
+                        if include_version and ('open' in status):
                             service_node = port_element.find('service')
                             if service_node is not None:
                                 port_service_obj = Service(name=service_node.get('name', ""), product=service_node.get('product', ""), version=service_node.get('version', ""), extrainfo=service_node.get('extrainfo', ""), method=service_node.get('method', ""), conf=int(service_node.get('conf', "0")))
-                        # Note: NSE scripts for UDP ports (-sU -sC) could be added here similarly to TCP
-                        # For now, scripts are None for UDP ports.
+                        # For UDP, scripts are not typically run with just -sU -sV, so scripts=None
                         parsed_ports.append(Port(number=port_num, protocol=protocol, status=status, service=port_service_obj, reason=reason, scripts=None))
                     except Exception as e: logger.error(f"Error parsing a UDP port element for {host_ip}: {e}", exc_info=True)
         logger.debug(f"UDP scan for {host_ip} finished. Parsed {len(parsed_ports)} ports.")
