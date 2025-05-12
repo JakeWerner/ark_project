@@ -4,6 +4,14 @@
 
 ARK allows for flexible control over various Nmap scan parameters, including host discovery, TCP and UDP port scanning, service and version detection, OS detection, Nmap Scripting Engine (NSE) execution with custom scripts and arguments, timing templates, selectable TCP scan types, IPv6 scanning, and detailed reason reporting for port states. Results can be easily exported to JSON/CSV or saved and loaded for session persistence.
 
+## Why use autork?
+
+autork takes the power and versatility of Nmap and makes it programmatically accessible and manageable within Python, which is precisely what's needed to automate and streamline network reconnaissance for pentesters.
+*Define complex scan profiles and run them consistently.
+*Automate scanning of large target lists.
+*Integrate Nmap results into larger custom toolchains.
+*Process and analyze Nmap data in sophisticated and programmatic ways using Python.
+
 ## Core Features
 
 * **Versatile Target Specification:**
