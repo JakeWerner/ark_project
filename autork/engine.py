@@ -2,9 +2,9 @@
 import logging
 from .datamodels import Host, Port, Service, OSMatch
 from .nmap_handler import NmapHandler
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Type # Added Type
 import json
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, fields # Added fields
 import csv
 
 logger = logging.getLogger(__name__)
@@ -20,41 +20,27 @@ class ARKEngine:
 
     def discover_live_hosts(
         self,
-        target_scope: Optional[str] = None, # Remains, but used if target_file is None
+        target_scope: Optional[str] = None,
         timing_template: Optional[int] = None,
-        input_target_file: Optional[str] = None, # <<< NEW
-        exclude_targets: Optional[str] = None,   # <<< NEW
-        exclude_file: Optional[str] = None       # <<< NEW
+        input_target_file: Optional[str] = None,
+        exclude_targets: Optional[str] = None,
+        exclude_file: Optional[str] = None
     ) -> List[Host]:
-        """
-        Discovers live hosts using various target specifications and exclusions.
-        """
-        log_target_spec = ""
-        if input_target_file:
-            log_target_spec = f"from file {input_target_file}"
-        elif target_scope:
-            log_target_spec = f"scope {target_scope}"
-        else:
+        if not target_scope and not input_target_file:
             logger.error("ARKEngine: Host discovery called without target_scope or input_target_file.")
             return []
-            
-        timing_log = f"T{timing_template if timing_template is not None else self.nmap_handler._get_validated_timing_template_value(None)}"
-        logger.info(f"ARKEngine: Discovering live hosts for targets {log_target_spec} (Timing: {timing_log})...")
-        if exclude_targets: logger.info(f"ARKEngine: Excluding targets: {exclude_targets}")
+        default_timing_for_log = self.nmap_handler._get_validated_timing_template_value(None) # For logging
+        log_target_spec = f"file {input_target_file}" if input_target_file else f"scope {target_scope}"
+        logger.info(f"ARKEngine: Discovering live hosts for targets {log_target_spec} (Timing: T{timing_template if timing_template is not None else default_timing_for_log})...")
+        if exclude_targets: logger.info(f"ARKEngine: Excluding targets string: {exclude_targets}")
         if exclude_file: logger.info(f"ARKEngine: Excluding targets from file: {exclude_file}")
 
         discovered_hosts: List[Host] = self.nmap_handler.run_ping_scan(
-            target_scope=target_scope, # Pass original scope
-            timing_template=timing_template,
-            input_target_file=input_target_file,
-            exclude_targets=exclude_targets,
-            exclude_file=exclude_file
+            target_scope=target_scope, timing_template=timing_template,
+            input_target_file=input_target_file, exclude_targets=exclude_targets, exclude_file=exclude_file
         )
-        # ... (rest of method remains the same) ...
-        if discovered_hosts:
-            logger.info(f"ARKEngine: Found {len(discovered_hosts)} live host(s).")
-        else:
-            logger.info(f"ARKEngine: No live hosts found up for the specified targets/exclusions by ping scan.")
+        if discovered_hosts: logger.info(f"ARKEngine: Found {len(discovered_hosts)} live host(s).")
+        else: logger.info(f"ARKEngine: No live hosts found up for the specified targets/exclusions by ping scan.")
         return discovered_hosts
 
 
@@ -64,7 +50,7 @@ class ARKEngine:
         nse_scripts: Optional[str] = None,
         nse_script_args: Optional[str] = None,
         timing_template: Optional[int] = None,
-        tcp_scan_type: Optional[str] = None # Parameter for "S", "T", "A", "F", "X", "N"
+        tcp_scan_type: Optional[str] = None
         ) -> Host:
         default_timing_for_log = self.nmap_handler._get_validated_timing_template_value(None)
         scan_type_log = f"TCP Scan Type: {f'-s{tcp_scan_type.upper()}' if tcp_scan_type and tcp_scan_type.strip().upper() in ['S','T','A','F','X','N'] else 'Nmap Default with -sV'}"
@@ -76,9 +62,8 @@ class ARKEngine:
         scan_data = self.nmap_handler.run_port_scan_with_services(
             host_obj.ip, top_ports=top_ports, include_os_detection=include_os_detection,
             nse_scripts=nse_scripts, nse_script_args=nse_script_args,
-            timing_template=timing_template, tcp_scan_type=tcp_scan_type # Pass through
+            timing_template=timing_template, tcp_scan_type=tcp_scan_type
         )
-        # ... (rest of logic to populate host_obj remains the same as the last full version) ...
         host_obj.ports = [p for p in host_obj.ports if p.protocol != 'tcp']
         host_obj.ports.extend(scan_data.get("ports", []))
         host_obj.os_matches = scan_data.get("os_matches", [])
@@ -96,8 +81,7 @@ class ARKEngine:
         return host_obj
 
     def scan_host_udp(self, host_obj: Host, top_ports: int = 100, include_version: bool = True, timing_template: Optional[int] = None):
-        # ... (remains the same as last full version, already passes timing_template) ...
-        default_timing_for_log = self.nmap_handler._get_validated_timing_template_value(None)
+        default_timing_for_log = self.nmap_handler._get_validated_timing_template_value(None) # For logging default
         logger.info(f"ARKEngine: Performing UDP scan on {host_obj.ip} (top {top_ports} ports, version={include_version}, Timing=T{timing_template if timing_template is not None else default_timing_for_log})...")
         udp_ports: List[Port] = self.nmap_handler.run_udp_scan(
             host_obj.ip, top_ports=top_ports, include_version=include_version,
@@ -111,54 +95,47 @@ class ARKEngine:
 
 
     def perform_basic_recon(
-        self,
-        target_scope: Optional[str] = None, # <<< Now optional if target_file used
-        top_ports: int = 100,
+        self, target_scope: Optional[str] = None, top_ports: int = 100,
         include_os_detection: bool = False,
-        nse_scripts: Optional[str] = None,
-        nse_script_args: Optional[str] = None,
+        nse_scripts: Optional[str] = None, nse_script_args: Optional[str] = None,
         include_udp_scan: bool = False, top_udp_ports: int = 50,
-        timing_template: Optional[int] = None,
-        tcp_scan_type: Optional[str] = None,
-        input_target_file: Optional[str] = None, # <<< NEW
-        exclude_targets: Optional[str] = None,   # <<< NEW
-        exclude_file: Optional[str] = None       # <<< NEW
+        timing_template: Optional[int] = None, tcp_scan_type: Optional[str] = None,
+        input_target_file: Optional[str] = None, exclude_targets: Optional[str] = None,
+        exclude_file: Optional[str] = None
         ) -> List[Host]:
-        """
-        Performs a configurable reconnaissance workflow with advanced target management.
-        Either target_scope or input_target_file must be provided.
-        """
         if not target_scope and not input_target_file:
             logger.error("ARKEngine: perform_basic_recon called without target_scope or input_target_file.")
             return []
-
-        log_target_spec = f"file {input_target_file}" if input_target_file else f"scope {target_scope}"
-        # ... (build full log message as before, including new params for logging) ...
         default_timing_for_log = self.nmap_handler._get_validated_timing_template_value(None)
         scan_type_log = f"TCP Scan Type: {f'-s{tcp_scan_type.upper()}' if tcp_scan_type and tcp_scan_type.strip().upper() in ['S','T','A','F','X','N'] else 'Nmap Default with -sV'}"
+        log_target_spec = f"file '{input_target_file}'" if input_target_file else f"scope '{target_scope}'"
         logger.info(f"ARKEngine: Starting full reconnaissance for targets {log_target_spec} "
                     f"(TCP ports={top_ports}, OS={include_os_detection}, "
                     f"Scripts='{nse_scripts or 'None'}', ScriptArgs='{nse_script_args or 'None'}', "
                     f"UDP={include_udp_scan}, UDP ports={top_udp_ports if include_udp_scan else 'N/A'}, "
                     f"Timing=T{timing_template if timing_template is not None else default_timing_for_log}, {scan_type_log})")
+        logger.critical(f"ENGINE DEBUG (perform_basic_recon): About to call discover_live_hosts. "
+                    f"Parameters being passed by perform_basic_recon to discover_live_hosts: "
+                    f"target_scope='{target_scope}', "
+                    f"timing_template={timing_template}, "
+                    f"input_target_file='{input_target_file}', "
+                    f"exclude_targets='{exclude_targets}', "
+                    f"exclude_file='{exclude_file}'"
+        )
         if exclude_targets: logger.info(f"ARKEngine: Recon excluding targets: {exclude_targets}")
         if exclude_file: logger.info(f"ARKEngine: Recon excluding targets from file: {exclude_file}")
 
-
         live_hosts: List[Host] = self.discover_live_hosts(
-            target_scope=target_scope, # Pass original scope along with file options
+            target_scope=target_scope, 
             timing_template=timing_template,
-            input_target_file=input_target_file,
-            exclude_targets=exclude_targets,
+            input_target_file=input_target_file, 
+            exclude_targets=exclude_targets, 
             exclude_file=exclude_file
         )
-
         if not live_hosts:
             logger.info(f"ARKEngine: No live hosts to perform detailed scans on for targets {log_target_spec}.")
             return []
-
         for host_obj in live_hosts:
-            # ... (scan_host_deep and scan_host_udp calls remain the same, using host_obj.ip) ...
             logger.info(f"\n--- Processing host: {host_obj.ip} ({host_obj.hostname or 'N/A'}) ---")
             self.scan_host_deep(
                 host_obj, top_ports=top_ports, include_os_detection=include_os_detection,
@@ -170,10 +147,11 @@ class ARKEngine:
                     host_obj, top_ports=top_udp_ports, include_version=True,
                     timing_template=timing_template
                 )
-        # ... (rest of method remains the same) ...
+        logger.info(f"\n[*] ARKEngine: Full reconnaissance complete for targets {log_target_spec}.")
         return live_hosts
 
-    # --- EXPORT METHODS (remain the same) ---
+
+    # --- EXPORT METHODS (already implemented) ---
     def _dataclass_to_dict_converter(self, obj: Any) -> Any:
         if isinstance(obj, list): return [self._dataclass_to_dict_converter(item) for item in obj]
         elif is_dataclass(obj) and not isinstance(obj, type): return {k: self._dataclass_to_dict_converter(v) for k, v in asdict(obj).items()}
@@ -186,7 +164,10 @@ class ARKEngine:
             results_as_dicts = [self._dataclass_to_dict_converter(host) for host in scan_results]
             with open(filename, 'w', encoding='utf-8') as f: json.dump(results_as_dicts, f, indent=4)
             logger.info(f"Successfully exported results to {filename}")
-        except Exception as e: logger.error(f"An error occurred during JSON export to {filename}: {e}", exc_info=True)
+        except IOError as e: logger.error(f"IOError exporting results to JSON file {filename}: {e}", exc_info=True) # Specific catch
+        except TypeError as e: logger.error(f"TypeError during JSON serialization for {filename}: {e}", exc_info=True)
+        except Exception as e: logger.error(f"An unexpected error occurred during JSON export to {filename}: {e}", exc_info=True)
+
 
     def export_to_csv(self, scan_results: List[Host], filename: str):
         logger.info(f"Exporting results to CSV file: {filename}")
@@ -223,4 +204,133 @@ class ARKEngine:
                         else: writer.writerow(host_base_info)
                     else: writer.writerow(host_base_info)
             logger.info(f"Successfully exported results to {filename}")
-        except Exception as e: logger.error(f"An error occurred during CSV export to {filename}: {e}", exc_info=True)
+        except IOError as e: logger.error(f"IOError exporting results to CSV file {filename}: {e}", exc_info=True) # Specific catch
+        except Exception as e: logger.error(f"An unexpected error occurred during CSV export to {filename}: {e}", exc_info=True)
+
+    # --- NEW SAVE AND LOAD METHODS ---
+    def _dict_to_dataclass_converter(self, data: Any, target_cls: Type) -> Any:
+        # ... (This is the complex recursive loader from the previous response) ...
+        # For brevity, assuming this is the version from the previous "full files for SAVE/LOAD" response
+        if data is None: return None
+        actual_cls_for_list_item = None
+        if hasattr(target_cls, '__origin__') and target_cls.__origin__ is list:
+            if not isinstance(data, list):
+                logger.warning(f"Data for list type {target_cls} is not a list: {type(data)}. Returning as is.")
+                return data
+            actual_cls_for_list_item = target_cls.__args__[0]
+            return [self._dict_to_dataclass_converter(item, actual_cls_for_list_item) for item in data]
+        actual_cls = target_cls
+        if hasattr(target_cls, '__origin__') and target_cls.__origin__ is Optional:
+            actual_cls = next(t for t in target_cls.__args__ if t is not type(None))
+        if not is_dataclass(actual_cls) or not isinstance(data, dict):
+            return data
+        field_types = {f.name: f.type for f in fields(actual_cls)}
+        constructor_args = {}
+        for name, field_type_hint in field_types.items():
+            value = data.get(name)
+            is_field_optional = hasattr(field_type_hint, '__origin__') and field_type_hint.__origin__ is Optional or \
+                                hasattr(field_type_hint, '__args__') and type(None) in field_type_hint.__args__
+            current_field_actual_type = field_type_hint
+            if is_field_optional:
+                current_field_actual_type = next(t for t in field_type_hint.__args__ if t is not type(None))
+            if value is not None:
+                if hasattr(current_field_actual_type, '__origin__') and current_field_actual_type.__origin__ is list:
+                    list_element_type = current_field_actual_type.__args__[0]
+                    constructor_args[name] = [self._dict_to_dataclass_converter(item, list_element_type) for item in value]
+                elif hasattr(current_field_actual_type, '__origin__') and current_field_actual_type.__origin__ is dict:
+                    constructor_args[name] = value 
+                elif is_dataclass(current_field_actual_type):
+                    constructor_args[name] = self._dict_to_dataclass_converter(value, current_field_actual_type)
+                else: constructor_args[name] = value
+            elif is_field_optional: constructor_args[name] = None
+        try: return actual_cls(**constructor_args)
+        except TypeError as e: logger.error(f"TypeError creating {actual_cls.__name__} with args {constructor_args} from data {data}: {e}", exc_info=True); return None
+
+
+    def export_to_json(self, scan_results: List[Host], filename: str):
+        """ Exports the list of Host scan results to a JSON file. """
+        logger.info(f"Exporting {len(scan_results)} host(s) to JSON file: {filename}")
+        try:
+            results_as_dicts = [asdict(host) for host in scan_results]
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(results_as_dicts, f, indent=4)
+            logger.info(f"Successfully exported results to {filename}")
+        except IOError as e: # This specific IOError block
+            logger.error(f"IOError exporting results to JSON file {filename}: {e}", exc_info=True)
+        except TypeError as e:
+            logger.error(f"TypeError during JSON serialization for {filename}: {e}. Check data structures.", exc_info=True)
+        except Exception as e: # Generic catch-all
+            logger.error(f"An unexpected error occurred during JSON export to {filename}: {e}", exc_info=True)
+
+    def export_to_csv(self, scan_results: List[Host], filename: str):
+        # ... (CSV export logic - this doesn't use _dataclass_to_dict_converter, so less likely to be the source of an *ERROR* unless file I/O)
+        logger.info(f"Exporting results to CSV file: {filename}")
+        headers = [
+            "Host IP", "Hostname", "Host Status", "MAC Address", "MAC Vendor",
+            "OS Guesses", "Host Scripts (Summary)", "Port Number", "Port Protocol", "Port Status", "Port Reason",
+            "Service Name", "Service Product", "Service Version", "Service ExtraInfo", "Port Scripts (Summary)"
+        ]
+        try:
+            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=headers, extrasaction='ignore')
+                writer.writeheader()
+                for host in scan_results:
+                    host_base_info = {
+                        "Host IP": host.ip, "Hostname": host.hostname or "", "Host Status": host.status,
+                        "MAC Address": host.mac_address or "", "MAC Vendor": host.vendor or "",
+                        "OS Guesses": "; ".join([f"{om.name} ({om.accuracy}%)" for om in host.os_matches]) if host.os_matches else "",
+                        "Host Scripts (Summary)": "; ".join([f"{sid}:{out[:30]}{'...' if len(out)>30 else ''}" for sid, out in (host.host_scripts or {}).items()])
+                    }
+                    if host.ports:
+                        relevant_ports = [p for p in host.ports if 'open' in p.status or 'filtered' in p.status]
+                        if relevant_ports:
+                            for port in relevant_ports:
+                                port_info_row = {
+                                    "Port Number": port.number, "Port Protocol": port.protocol, "Port Status": port.status,
+                                    "Port Reason": port.reason or "",
+                                    "Service Name": port.service.name if port.service else "",
+                                    "Service Product": port.service.product if port.service else "",
+                                    "Service Version": port.service.version if port.service else "",
+                                    "Service ExtraInfo": port.service.extrainfo if port.service else "",
+                                    "Port Scripts (Summary)": "; ".join([f"{sid}:{out[:30]}{'...' if len(out)>30 else ''}" for sid, out in (port.scripts or {}).items()])
+                                }
+                                writer.writerow({**host_base_info, **port_info_row})
+                        else: writer.writerow(host_base_info)
+                    else: writer.writerow(host_base_info)
+            logger.info(f"Successfully exported results to {filename}")
+        except IOError as e: # This specific IOError block
+            logger.error(f"IOError exporting results to CSV file {filename}: {e}", exc_info=True)
+        except Exception as e: # Generic catch-all
+            logger.error(f"An unexpected error occurred during CSV export to {filename}: {e}", exc_info=True)
+
+
+    def save_scan_results(self, scan_results: List[Host], filename: str):
+        logger.info(f"Saving {len(scan_results)} host(s) scan results to: {filename}")
+        try:
+            # Use the corrected export_to_json for saving
+            self.export_to_json(scan_results, filename)
+            # export_to_json already logs success
+        except Exception as e: 
+            logger.error(f"Failed to save scan results to {filename} (error during underlying export): {e}", exc_info=True)
+
+
+    def load_scan_results(self, filename: str) -> List[Host]:
+        # ... (load_scan_results method with the _dict_to_dataclass_converter as provided in the previous full file response) ...
+        logger.info(f"Loading scan results from: {filename}")
+        loaded_hosts: List[Host] = []
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                data_from_json = json.load(f)
+            if not isinstance(data_from_json, list):
+                logger.error(f"Invalid format in {filename}: Expected a list of host data.")
+                return []
+            for host_data_dict in data_from_json:
+                if isinstance(host_data_dict, dict):
+                    host_obj = self._dict_to_dataclass_converter(host_data_dict, Host)
+                    if host_obj: loaded_hosts.append(host_obj)
+                else: logger.warning(f"Skipping non-dictionary item in loaded JSON data: {type(host_data_dict)}")
+            logger.info(f"Successfully loaded {len(loaded_hosts)} host(s) from {filename}")
+            return loaded_hosts
+        except FileNotFoundError: logger.error(f"File not found when loading scan results: {filename}"); return []
+        except json.JSONDecodeError as e: logger.error(f"Error decoding JSON from {filename}: {e}"); return []
+        except Exception as e: logger.error(f"An unexpected error occurred during loading from {filename}: {e}", exc_info=True); return []
