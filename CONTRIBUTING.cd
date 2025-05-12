@@ -1,0 +1,58 @@
+# Contributing to AutomatedReconKit (ARK)
+
+First off, thank you for considering contributing to ARK! We welcome any help, from reporting bugs and suggesting features to submitting code changes. This document provides guidelines to help you get started.
+
+## How Can I Contribute?
+
+### Reporting Bugs
+* Ensure the bug was not already reported by searching on GitHub under [Issues](https://github.com/JakeWerner/autork/issues). * If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/yourusername/autork/issues/new). * Be sure to include a **title and clear description**, as much relevant information as possible, and a **code sample or an executable test case** demonstrating the expected behavior that is not occurring.
+* Include details about your environment (Python version, Nmap version, Operating System).
+
+### Suggesting Enhancements or New Features
+* Open a new issue in the [Issue Tracker](https://github.com/JakeWerner/autork/issues). * Clearly describe the proposed enhancement or feature and why it would be valuable to ARK.
+* Provide examples of how it might be used.
+
+### Code Contributions (Pull Requests)
+If you'd like to contribute code, please follow these steps:
+
+1.  **Fork the Repository:** Create your own fork of the [ARK repository](https://github.com/JakeWerner/autork). 2.  **Create a Branch:** Create a new branch in your fork for your feature or bug fix (e.g., `git checkout -b feature/my-new-feature` or `git checkout -b fix/bug-fix-description`).
+3.  **Set Up Development Environment:**
+    * Ensure you have Python 3.8+ and Nmap installed and in your PATH.
+    * Clone your fork locally.
+    * Create and activate a Python virtual environment:
+        ```bash
+        python -m venv venv
+        # Windows: .\venv\Scripts\Activate.ps1
+        # Linux/macOS: source venv/bin/activate
+        ```
+    * Install ARK in editable mode along with development dependencies:
+        ```bash
+        pip install -e .[dev,test] 
+        ```
+        (This assumes `pytest` and `pytest-mock` are listed under `test` in `pyproject.toml` and `dev` includes `test`.)
+4.  **Make Your Changes:**
+    * Write clean, readable code.
+    * Follow PEP 8 Python style guidelines.
+    * Add or update docstrings for any new or modified public functions/classes.
+    * Add unit tests for any new functionality or bug fixes in the `tests/` directory.
+5.  **Run Tests:** Ensure all tests pass before submitting your changes:
+    ```bash
+    python -m pytest
+    ```
+6.  **Commit Your Changes:** Use clear and descriptive commit messages.
+7.  **Push to Your Fork:** Push your changes to your branch on your fork:
+    ```bash
+    git push origin feature/my-new-feature
+    ```
+8.  **Submit a Pull Request:** Open a pull request from your branch to the main `autork` repository.
+    * Provide a clear description of the changes in your pull request.
+    * Reference any relevant issues.
+
+## Coding Style
+* Please follow PEP 8 guidelines for Python code.
+* Ensure docstrings are clear and follow a consistent style (e.g., reStructuredText or Google style).
+
+## Code of Conduct
+This project and everyone participating in it is governed by a [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior. (You'll need to create a `CODE_OF_CONDUCT.md` file, often using a template like the Contributor Covenant.)
+
+We look forward to your contributions!
