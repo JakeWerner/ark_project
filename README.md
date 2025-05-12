@@ -52,11 +52,9 @@ Currently, `autork` is best installed directly from the source for development o
 1.  **Install Nmap:**
     If you haven't already, download and install Nmap from [https://nmap.org/download.html](https://nmap.org/download.html). Ensure the `nmap` command is executable and in your system's PATH.
 
-2.  **Clone the ARK repository:**
+2.  **Use pip to install autork:**
     ```bash
-    # !!! REPLACE with your actual repository URL if you host it !!!
-    git clone [https://github.com/yourusername/autork.git](https://github.com/yourusername/autork.git)
-    cd autork
+    pip install autork
     ```
 
 3.  **(Recommended) Create and activate a Python virtual environment:**
