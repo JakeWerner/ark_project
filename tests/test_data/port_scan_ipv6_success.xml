@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<nmaprun scanner="nmap" args="nmap -6 -sV -T4 -sC -O --top-ports 2 -oX - 2001:db8::a" start="1746747100" startstr="Thu May  8 17:31:40 2025" version="7.95" xmloutputversion="1.05">
+<host starttime="1746747100" endtime="1746747105">
+    <status state="up" reason="nd-response" reason_ttl="0"/>
+    <address addr="2001:db8::a" addrtype="ipv6"/>
+    <address addr="01:23:45:67:89:AB" addrtype="mac" vendor="IPv6TestMAC"/>
+    <hostnames><hostname name="ipv6target.example.com" type="PTR"/></hostnames>
+    <ports>
+        <port protocol="tcp" portid="80">
+            <state state="open" reason="syn-ack" reason_ttl="0"/>
+            <service name="http" product="ApacheTest" version="2.4.50" method="probed" conf="10"/>
+            <script id="http-title" output="IPv6 Test Web Server"/>
+        </port>
+        <port protocol="tcp" portid="443">
+            <state state="closed" reason="reset" reason_ttl="0"/>
+        </port>
+    </ports>
+    <os>
+        <osmatch name="Linux 5.x" accuracy="90" line="12345"/>
+    </os>
+    <hostscript>
+        <script id="host-script-ipv6" output="Some host data for IPv6"/>
+    </hostscript>
+    <uptime seconds="654321" lastboot="2025-05-07 12:00:00"/>
+    <distance value="2"/>
+</host>
+<runstats><finished time="1746747105" timestr="Thu May  8 17:31:45 2025" elapsed="5" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

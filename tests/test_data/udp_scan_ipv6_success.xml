@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<nmaprun scanner="nmap" args="nmap -6 -sU -sV -T4 --top-ports 1 -oX - 2001:db8::b" start="1746747200" startstr="Thu May  8 17:33:20 2025" version="7.95" xmloutputversion="1.05">
+<host starttime="1746747200" endtime="1746747230">
+    <status state="up" reason="nd-response" reason_ttl="0"/>
+    <address addr="2001:db8::b" addrtype="ipv6"/>
+    <hostnames/>
+    <ports>
+        <port protocol="udp" portid="53">
+            <state state="open|filtered" reason="no-response" reason_ttl="0"/>
+            <service name="domain" method="table" conf="3"/>
+        </port>
+    </ports>
+</host>
+<runstats><finished time="1746747230" timestr="Thu May  8 17:33:50 2025" elapsed="30" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

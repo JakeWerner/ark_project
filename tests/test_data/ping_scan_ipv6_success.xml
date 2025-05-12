@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<nmaprun scanner="nmap" args="nmap -6 -sn -T4 -oX - 2001:db8::1 [2001:db8::2]" start="1746747000" startstr="Thu May  8 17:30:00 2025" version="7.95" xmloutputversion="1.05">
+<verbose level="0"/>
+<debugging level="0"/>
+<host starttime="1746747000" endtime="1746747001">
+    <status state="up" reason="nd-response" reason_ttl="0"/>
+    <address addr="2001:db8::1" addrtype="ipv6"/>
+    <hostnames><hostname name="ipv6.host1.example.com" type="PTR"/></hostnames>
+</host>
+<host starttime="1746747001" endtime="1746747002">
+    <status state="down" reason="no-response" reason_ttl="0"/>
+    <address addr="2001:db8::2" addrtype="ipv6"/>
+</host>
+<runstats><finished time="1746747002" timestr="Thu May  8 17:30:02 2025" elapsed="2" exit="success"/><hosts up="1" down="1" total="2"/>
+</runstats>
+</nmaprun>
